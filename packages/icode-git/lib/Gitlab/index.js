@@ -98,7 +98,7 @@ class Gitlab {
             description: body
         }).then(res => {
             if (!res.id) {
-                throw new Error(res?.data?.message || res?.data?.errors[0].message)
+                throw new Error(res?.data?.message || res?.data?.error || res?.data?.errors[0].message)
             } else {
                 return res
             }

@@ -115,7 +115,7 @@ class Gitlab {
             description: body
         }).then(res => {
             if (!res.id) {
-                throw new Error(res?.data?.message || res?.data?.errors[0].message)
+                throw new Error(res?.data?.message || res?.data?.error || res?.data?.errors[0].message)
             } else {
                 return res
             }
@@ -125,15 +125,12 @@ class Gitlab {
     // 获取仓库协作用户
     getCollaborators(login, name, type) {
         let url = ''
-        // if (type === 'user') {
         url = `/projects/${login}%2F${name}/members?page=1&per_page=100`
-        // } else {
-        //     url = `/groups/${login}%2F${name}/members?page=1&per_page=100`
-        // }
-
         return this.request.get(url).then(res => {
             if (res?.length ?? 0) {
-                return res
+                let resFilter = res.filter(item => [40, 50].includes(item.access_level))
+                resFilter.forEach(item => item.value = item.id)
+                return resFilter
             }
             return []
         })
