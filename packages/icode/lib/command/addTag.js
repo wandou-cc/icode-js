@@ -78,7 +78,10 @@ class GitTag extends GitCommand {
             {
                 type: 'input',
                 message: '输入备注',
-                name: 'message'
+                name: 'message',
+                validate: (value) => {
+                    return !value ? '备注必填' : true
+                }
             }
         ])
 
