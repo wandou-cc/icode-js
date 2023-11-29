@@ -1,0 +1,17 @@
+{
+  "name": "icode-js",
+  "version": "1.0.0",
+  "description": "",
+  "keywords": [
+    "脚手架",
+    "git"
+  ],
+  "author": "",
+  "license": "ISC",
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "lerna": "^5.3.0"
+  }
+}
