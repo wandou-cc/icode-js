@@ -92,7 +92,7 @@ class GitPush extends GitCommand {
         this.originBranch = await this.icodeGitServer.getCurrentBranch()
         await runWithSpinner(async () => {
             this.remoteBranchList = await this.icodeGitServer.getRemoteBranchList(this.login, this.repoName)
-        },'获取远程所有分支')
+        }, '获取远程所有分支')
         this.waitBranchList = await this.createWaitBranchList()
         this.localBranchList = await this.icodeGitServer.getLocalBranchList()
         if (this.options?.origin) {
@@ -361,9 +361,8 @@ class GitPush extends GitCommand {
                         '--allow-unrelated-histories': true
                     })
                 }, '拉取主分支')
+                await this.checkConflicted()
             }
-
-            await this.checkConflicted()
 
             // 合并
             if (!branch.isOriginBranch) {

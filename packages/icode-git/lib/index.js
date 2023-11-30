@@ -184,7 +184,6 @@ class icodeGit {
         // }
 
         if (pullMaster) {
-            console.log('拉取远程')
             await this.pullOriginBranch(this.repo.default_branch || this.repo.relation, options)
         }
         // pullMaster && hasRemote !== 0 && await this.pullOriginBranch(fromBranch || this.repo.default_branch || this.repo.relation, options)
