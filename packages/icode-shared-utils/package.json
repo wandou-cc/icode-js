@@ -1,11 +1,11 @@
 {
   "name": "@icode-js/icode-shared-utils",
   "version": "1.0.0",
-  "description": "> TODO: description",
-  "author": "chenchao <chenchao@izuche.com>",
+  "description": "公共方法",
+  "author": "chenchao <chenchaowd@gmail.com>",
   "homepage": "",
   "license": "ISC",
-  "main": "lib/index.js",
+  "main": "index.js",
   "directories": {
     "lib": "lib",
     "test": "__tests__"

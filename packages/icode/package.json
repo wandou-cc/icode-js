@@ -1,10 +1,15 @@
 {
   "name": "@icode-js/icode",
   "version": "1.0.0",
-  "description": "> TODO: description",
-  "author": "chenchao <chenchao@izuche.com>",
+  "description": "icode命令更加方便的使用git操作管理项目,并支持gitlab/gitee/github以及企业内部gitlab",
+  "author": "chenchao <chenchaowd@gmail.com>",
   "homepage": "",
   "license": "ISC",
+  "keywords": [
+    "git",
+    "icode",
+    "simple-git"
+  ],
   "bin": {
     "icode": "./bin/icode.js"
   },

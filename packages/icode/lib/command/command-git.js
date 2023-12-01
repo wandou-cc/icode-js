@@ -4,6 +4,7 @@ const terminalLink = require('terminal-link');
 const icodeGit = require('@icode-js/icode-git')
 const { icodeLog, readConfig, writeConfig, colors, inquirer, runWithSpinner } = require('@icode-js/icode-shared-utils')
 const githelp = require('../utils/gitHelp')
+const { generateTitle } = require('../utils/generateTitle')
 
 class GitCommand {
     constructor(options) {
@@ -31,6 +32,8 @@ class GitCommand {
     async init() {
         return new Promise((resolve, reject) => {
             let chain = Promise.resolve()
+            chain = chain.then(() => generateTitle())
+
             // 检查当前项目有没有.git 文件
             chain = chain.then(async () => {
                 await this.checkGitInit()
@@ -60,6 +63,7 @@ class GitCommand {
 
             // 关联远程地址
             chain = chain.then(() => this.remoteBranch())
+        
             chain = chain.then(() => resolve())
         })
     }

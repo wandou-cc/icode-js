@@ -239,7 +239,6 @@ class icodeConfig {
 
 function icodeConfigFun() {
     let icodeconfig = new icodeConfig()
-    console.log(icodeConfig)
     icodeconfig.initCommand()
 }
 

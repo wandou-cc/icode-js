@@ -1,8 +1,8 @@
 {
   "name": "@icode-js/icode-git",
   "version": "1.0.0",
-  "description": "> TODO: description",
-  "author": "chenchao <chenchao@izuche.com>",
+  "description": "封装了一下simple-git 并且添加了各个平台常用的api接口",
+  "author": "chenchao <chenchaowd@gmail.com>",
   "homepage": "",
   "license": "ISC",
   "main": "lib/index.js",

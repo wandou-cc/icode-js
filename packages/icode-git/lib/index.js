@@ -7,7 +7,6 @@ class icodeGit {
         // this.user = null
         // this.orgs = null
         this.repo = null
-
         this.login = null
         this.name = null
     }
@@ -62,25 +61,17 @@ class icodeGit {
 
     async getRepoDetails() {
         try {
-            // 获取远程仓库列表
             const remotes = await this.git.getRemotes(true)
-            // 查找名为 'origin' 的远程仓库
             const origin = remotes.find(remote => remote.name === 'origin')
             if (origin) {
-                // 打印远程仓库的地址
-                // console.log('Remote "origin" URL:', origin.refs.fetch)
-                // 如果你需要从 URL 中解析出仓库的名称
                 const urlParts = origin.refs.fetch.split('/')
                 const repoName = urlParts[urlParts.length - 1].replace(/\.git$/, '')
-                // console.log('Repository Name:', repoName)
                 return repoName
             } else {
-                // console.log('No remote named "origin" found.')
                 return null
             }
         } catch (err) {
             throw new Error(err)
-            // console.error('Error:', err)
         }
     }
 
