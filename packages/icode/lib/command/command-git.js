@@ -37,7 +37,6 @@ class GitCommand {
             // 检查当前项目有没有.git 文件
             chain = chain.then(async () => {
                 await this.checkGitInit()
-
             })
             // 检查是否有缓存
             chain = chain.then(async () => {

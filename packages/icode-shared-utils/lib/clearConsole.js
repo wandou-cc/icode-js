@@ -8,5 +8,6 @@ exports.clearConsole = title => {
          if (title) {
               console.log(title)
          }
+         console.log()
     }
 }
