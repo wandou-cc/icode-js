@@ -58,16 +58,17 @@ function registerCommand() {
         .command('checkout <branch-name> [baseBranch-name]')
         .description('切换分支')
         .option('-p, --pushOrigin', '创建并直接提交到远程')
-        .option('-m, --pullMainBranch', '是否同步主分支')
+        .option('-pm, --pullMainBranch', '是否同步主分支')
         .action((branchName, baseBranchName, options) => {
             require('./command/checkout')(branchName, baseBranchName, options)
         })
 
     program
-        .command('push [branchName...]')
+        .command('push  [branchName...]')
         .description('提交代码/本地或者远程提交')
         .option('-o, --origin', '使用远程合并方案')
-        .option('-m, --pullMainBranch', '是否同步主分支')
+        .option('-m, --message <message>', '提交说明')
+        .option('-pm, --pullMainBranch', '是否同步主分支')
         .option('--refreshGitServer', '更换托管平台')
         .option('--refreshGitToken', '更换当前项目的托管平台token')
         .option('--notPushCurrent', '不提交当前的开发的分支')

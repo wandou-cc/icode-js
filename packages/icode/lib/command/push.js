@@ -161,6 +161,7 @@ class GitPush extends GitCommand {
                 name: 'title',
                 type: 'input',
                 message: '请输入合并标题(必填)',
+                default: this.options?.message || '',
                 validate: (value) => {
                     return !value ? '请输入标题' : true
                 }
@@ -397,6 +398,9 @@ class GitPush extends GitCommand {
     }
 
     async commitGit() {
+        if(this.options?.message) {
+            return this.options?.message
+        }
         const { commitFix } = await inquirer.prompt([
             {
                 name: 'commitFix',
@@ -414,6 +418,7 @@ class GitPush extends GitCommand {
                 ]
             }
         ])
+
         const { commitText } = await inquirer.prompt({
             type: 'text',
             name: 'commitText',
