@@ -111,6 +111,22 @@ class GitPush extends GitCommand {
     }
 
     async localMergeBranch() {
+
+        if (!this.options?.yes) {
+            let { hasConfirm } = await inquirer.prompt([
+                {
+                    name: 'hasConfirm',
+                    type: 'confirm',
+                    message: `是否确定将${this.originBranch}提交合并到${this.branchList.join()}`,
+                    default: true
+                }
+            ])
+
+            if (!hasConfirm) {
+                return
+            }
+        }
+
         for (let index = 0; index < this.waitBranchList.length; index++) {
             let branchName = this.waitBranchList[index].name
 
@@ -155,40 +171,51 @@ class GitPush extends GitCommand {
         }
     }
 
-    async originMergeBranch() {
-        let { title, body } = await inquirer.prompt([
-            {
-                name: 'title',
-                type: 'input',
-                message: '请输入合并标题(必填)',
-                default: this.options?.message || '',
-                validate: (value) => {
-                    return !value ? '请输入标题' : true
+
+    async askOriginTitle() {
+
+        if (!this.options?.yes) {
+            let { hasConfirm } = await inquirer.prompt([
+                {
+                    name: 'hasConfirm',
+                    type: 'confirm',
+                    message: `是否确定将${this.originBranch}提交合并到${this.branchList.join()}`,
+                    default: true
                 }
-            }, {
-                name: 'body',
-                type: 'input',
-                message: '请输入合并备注(选填)'
-            }
-        ])
+            ])
 
-        let { hasConfirm } = await inquirer.prompt([
-            {
-                name: 'hasConfirm',
-                type: 'confirm',
-                message: `是否确定将${this.originBranch}提交合并到${this.branchList.join()}`,
-                default: true
+            if (!hasConfirm) {
+                return
             }
-        ])
-
-        if (!hasConfirm) {
-            return
         }
 
-        // 这里有逻辑问题 需要在循环中处理当前的审批人是谁 而不是在这里
-        // let reviewers = ''
-        // let assignees = ''
+        let title = this.options?.message, body = ''
 
+        if (!this.options?.yes || !this.options?.message) {
+            ({ title, body } = await inquirer.prompt([
+                {
+                    name: 'title',
+                    type: 'input',
+                    message: '请输入合并标题(必填)',
+                    default: this.options?.message || '',
+                    validate: (value) => {
+                        return !value ? '请输入标题' : true
+                    }
+                }, {
+                    name: 'body',
+                    type: 'input',
+                    message: '请输入合并备注(选填)'
+                }
+            ]))
+        }
+
+        return {
+            title, body
+        }
+    }
+
+    async originMergeBranch() {
+        let { title, body } = await this.askOriginTitle()
         let hasProtected = this.waitBranchList.filter(item => item.protected)
         // 如果当前有受保护的分支 并 是组织项目 就要获取当前有权限的人
         if (hasProtected.length !== 0 && this.ownerType == 'org') {
@@ -353,7 +380,7 @@ class GitPush extends GitCommand {
             } else {
                 icodeLog.info('', `远程没有${this.currentBranch}分支,不执行拉取操作`)
             }
-            
+
             if (this.options.pullMainBranch && this.mainBranch !== this.currentBranch) {
                 icodeLog.verbose('', 'pullMainBranch: 生效, 拉取主分支')
                 await runWithSpinner(async () => {
@@ -398,9 +425,10 @@ class GitPush extends GitCommand {
     }
 
     async commitGit() {
-        if(this.options?.message) {
+        if (this.options?.message) {
             return this.options?.message
         }
+        debugger
         const { commitFix } = await inquirer.prompt([
             {
                 name: 'commitFix',

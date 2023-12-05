@@ -21,7 +21,7 @@ sudo npm i -g icode-js
 `checkout <branchName> [baseBranchName] [-p] [-m]`
 
 - `-p, --pushOrigin`: 创建分支并提交到远程
-- `-m, --pullMainBranch`: 是否同步主分支
+- `-pm, --pullMainBranch`: 是否同步主分支
 
    用于切换分支或者是新建分支.
    如果本地已经有这个分支就会直接切换并检查远程有没有这个分支,如果远程没有就结束,如果远程有就会拉取
@@ -32,13 +32,16 @@ sudo npm i -g icode-js
 
 `push [branchName...] [-m] [-o] [--refreshGitServer] [--refreshGitToken] [--notPushCurrent]`
 
-- `-m, --pullMainBranch`: 是否同步主分支
+- `-pm, --pullMainBranch`: 是否同步主分支
+- `-m, --message`: 提交说明
+- `-y, --yes`: 询问项都是yes
 - `-o, --origin`: 是否使用远程合并方案 仅仅支持gitlab系列
 - `--refreshGitServer`: 更换托管平台
 - `--refreshGitToken`: 更换托管平台Token
 - `--notPushCurrent`: 不提交当前分支到远程
 
 默认是本地进行切换分支合并提交远程,对于受保护的分支将会直接进行跳过,如果是远程合并方案,有受保护的分支将会去获取有权限的人并提交合并请求.
+如果需要使用 `-y` 参数, 建议跟 `-m` 一起使用
 
 ### `tag`
 

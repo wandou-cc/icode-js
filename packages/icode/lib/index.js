@@ -67,6 +67,7 @@ function registerCommand() {
         .command('push  [branchName...]')
         .description('提交代码/本地或者远程提交')
         .option('-o, --origin', '使用远程合并方案')
+        .option('-y, --yes', '选项全部设置成yes')
         .option('-m, --message <message>', '提交说明')
         .option('-pm, --pullMainBranch', '是否同步主分支')
         .option('--refreshGitServer', '更换托管平台')
