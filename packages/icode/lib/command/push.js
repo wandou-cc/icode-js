@@ -353,6 +353,7 @@ class GitPush extends GitCommand {
             } else {
                 icodeLog.info('', `远程没有${this.currentBranch}分支,不执行拉取操作`)
             }
+            
             if (this.options.pullMainBranch && this.mainBranch !== this.currentBranch) {
                 icodeLog.verbose('', 'pullMainBranch: 生效, 拉取主分支')
                 await runWithSpinner(async () => {
