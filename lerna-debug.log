@@ -1,0 +1,10 @@
+19 error Error: Command failed with exit code 1: git remote update
+19 error fatal: 无法访问 'https://github.com/wandou-cc/icode-js.git/'：LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to github.com:443
+19 error error: 不能获取 origin
+19 error 正在获取 origin
+19 error     at makeError (/usr/local/lib/node_modules/lerna/node_modules/execa/lib/error.js:60:11)
+19 error     at Function.module.exports.sync (/usr/local/lib/node_modules/lerna/node_modules/execa/index.js:194:17)
+19 error     at Object.execSync (/usr/local/lib/node_modules/lerna/node_modules/@lerna/child-process/index.js:39:16)
+19 error     at updateRemote (/usr/local/lib/node_modules/lerna/node_modules/@lerna/version/lib/is-behind-upstream.js:34:16)
+19 error     at isBehindUpstream (/usr/local/lib/node_modules/lerna/node_modules/@lerna/version/lib/is-behind-upstream.js:16:3)
+19 error     at VersionCommand.initialize (/usr/local/lib/node_modules/lerna/node_modules/@lerna/version/index.js:153:9)
