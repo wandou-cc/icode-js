@@ -6,7 +6,6 @@ const program = require('commander')
 const semver = require('semver')
 const pkg = require('../package.json')
 const { icodeLog, colors, checkConfig } = require('@icode-js/icode-shared-utils')
-// const { checkConfig } = require('./utils/config')
 
 module.exports = async () => {
     checkNodeVersion(pkg.engines.node)
@@ -73,8 +72,8 @@ function registerCommand() {
         .option('--refreshGitServer', '更换托管平台')
         .option('--refreshGitToken', '更换当前项目的托管平台token')
         .option('--notPushCurrent', '不提交当前的开发的分支')
-        .action((branchs, options) => {
-            require('./command/push')(branchs, options)
+        .action(async (branchs, options) => {
+           await require('./command/push')(branchs, options)
         })
 
     program
@@ -127,8 +126,14 @@ function registerCommand() {
             process.exit()
         })
 
-    // program.hook('postAction', () => {
+    // program.hook('postAction', async () => {
     //     console.log('在这里检查更新')
+    //     debugger
+    //     // const currentVersion = pkg.version
+    //     // const currentPkgName = '@icode-js/icode'
+
+    //     // let newPackageVersion = await getNpmSemverVersion(currentVersion, currentPkgName)
+    //     // console.log(newPackageVersion)
     // })
 
     program.on('--help', () => {
@@ -152,13 +157,11 @@ function registerCommand() {
         return `缺少必需的参数 ${colors.yellow(`<${argName}>`)}`
     })
 
-    // enhanceErrorMessages('optionMissingArgument', (option, flag) => {
-    //     return `缺少选项所需的参数: ${colors.yellow(option.flags)}` + (
-    //         flag ? `, ${colors.yellow(flag)}` : ``
-    //     )
-    // })
-
-
+    enhanceErrorMessages('optionMissingArgument', (option, flag) => {
+        return `缺少选项所需的参数: ${colors.yellow(option.flags)}` + (
+            flag ? `, ${colors.yellow(flag)}` : ``
+        )
+    })
 
     program.parse(process.argv)
 }

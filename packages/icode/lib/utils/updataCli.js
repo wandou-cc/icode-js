@@ -1,0 +1,59 @@
+'use strict';
+const axios = require('axios')
+const urlJson = require('url-join')
+const semver = require('semver')
+
+// 发送请求获取包的信息
+function getNpmPackageInfo(packageName, npmOrigin) {
+    const npmOriginUrl = npmOrigin || getDefaultOrigin()
+    const npmInfoUrl = urlJson(npmOriginUrl, packageName)
+    return axios.get(npmInfoUrl).then(res => {
+        if (res.status === 200) {
+            return res.data
+        }
+        return []
+    }).catch((err) => {
+        return Promise.reject(err)
+    })
+}
+
+// 默认使用 淘宝镜像
+function getDefaultOrigin(npmOrigin = true) {
+    return npmOrigin ? 'https://registry.npmjs.org' : 'https://registry.npm.taobao.org'
+}
+
+// 解析版本号
+async function analyZeVersion(packageName, origin) {
+    let packageInfo = await getNpmPackageInfo(packageName, origin)
+    if (packageInfo) {
+        return Object.keys(packageInfo.versions)
+    } else {
+        return []
+    }
+}
+
+// 获取大于当前版本的version
+function getGtversion(versionList, currentVersion) {
+    return versionList.filter(ver => semver.satisfies(ver, `>${currentVersion}`))
+    .sort((a, b) => semver.gt(b, a) ? 1 : -1)
+}
+
+// 获取最新版本
+exports.getNpmSemverVersion = async (currentVersion, packageName, origin) => {
+    let versionList = await analyZeVersion(packageName, origin) 
+    let gtVersions = getGtversion(versionList, currentVersion)
+    if (gtVersions && gtVersions.length > 0) {
+        return gtVersions[0]
+    }
+    return null
+}
+
+exports.getNpmLatestVersion = async (npmName, registry) => {
+    let versions = await analyZeVersion(npmName, registry);
+    if (versions) {
+        return versions.sort((a, b) => semver.gt(b, a))[0];
+    }
+    return null;
+}
+
+

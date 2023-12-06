@@ -26,6 +26,7 @@
   "dependencies": {
     "@icode-js/icode-git": "^1.0.2",
     "@icode-js/icode-shared-utils": "^1.0.2",
+    "axios": "^1.6.2",
     "commander": "^11.1.0",
     "fs-extra": "^11.1.1",
     "import-local": "^3.1.0",
@@ -33,6 +34,7 @@
     "root-check": "^1.0.0",
     "semver": "^7.5.4",
     "terminal-link": "^2.1.1",
+    "url-join": "^4.0.1",
     "validate-npm-package-name": "^5.0.0"
   },
   "engines": {
