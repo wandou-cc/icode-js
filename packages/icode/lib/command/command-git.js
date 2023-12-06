@@ -45,7 +45,7 @@ class GitCommand {
                 if (!['github', 'gitlab', 'gitee'].includes(this.currentServerName)) {
                     let companyConfig = readConfig('companyGitlabConfig')
                     let companyInfo = companyConfig.filter(item => item.name === this.currentServerName)[0]
-                    process.env.ICODE_BASRURL = 'https://' + companyInfo.baseUrl + '/api/v4'
+                    process.env.ICODE_BASRURL = companyInfo.baseUrl + '/api/v4'
                     process.env.ICODE_REMOEURL = companyInfo.remoteUrl
                 }
             })
@@ -186,11 +186,12 @@ class GitCommand {
             {
                 type: 'input',
                 name: 'baseUrl',
-                message: '请输入仓库主域名 https://[XXXXX.com]',
+                message: '请输入仓库主域名 https://XXXXX.XX/',
                 default: '',
                 validate(value) {
-                    const urlPattern = /^(?!https?:\/\/).*\.com$/
-                    return !urlPattern.test(value) ? new Error('不需要输入http:// 或者 https:// 只需要输入[]部分,并以.com 结尾') : true
+                    return !value.length ? new Error('仓库主域名不能为空') : true
+                    // const urlPattern = /^(?!https?:\/\/).*\.com$/
+                    // return !urlPattern.test(value) ? new Error('不需要输入http:// 或者 https:// 只需要输入[]部分,并以.com/.cn 结尾') : true
                 }
             },
             {
