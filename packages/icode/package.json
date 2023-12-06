@@ -1,6 +1,6 @@
 {
   "name": "@icode-js/icode",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "icode命令更加方便的使用git操作管理项目,并支持gitlab/gitee/github以及企业内部gitlab",
   "author": "chenchao <chenchaowd@gmail.com>",
   "homepage": "",
@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "@icode-js/icode-git": "^1.0.2",
-    "@icode-js/icode-shared-utils": "^1.0.2",
+    "@icode-js/icode-shared-utils": "^1.0.3",
     "axios": "^1.6.2",
     "commander": "^11.1.0",
     "fs-extra": "^11.1.1",
