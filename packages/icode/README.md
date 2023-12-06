@@ -18,7 +18,7 @@ sudo npm i -g icode-js
 
 ### `checkout`
 
-`checkout <branchName> [baseBranchName] [-p] [-m]`
+`checkout <branchName> [baseBranchName] [-p] [-pm]`
 
 - `-p, --pushOrigin`: 创建分支并提交到远程
 - `-pm, --pullMainBranch`: 是否同步主分支
@@ -30,7 +30,7 @@ sudo npm i -g icode-js
 
 ### `push`
 
-`push [branchName...] [-m] [-o] [--refreshGitServer] [--refreshGitToken] [--notPushCurrent]`
+`push [branchName...] [-pm] [-o][-m] [-y] [--refreshGitServer] [--refreshGitToken] [--notPushCurrent]`
 
 - `-pm, --pullMainBranch`: 是否同步主分支
 - `-m, --message`: 提交说明
