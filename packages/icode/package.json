@@ -1,6 +1,6 @@
 {
   "name": "@icode-js/icode",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "icode命令更加方便的使用git操作管理项目,并支持gitlab/gitee/github以及企业内部gitlab",
   "author": "chenchao <chenchaowd@gmail.com>",
   "homepage": "",
