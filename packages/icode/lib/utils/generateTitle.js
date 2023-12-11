@@ -1,9 +1,14 @@
-const { colors, clearConsole } = require('@icode-js/icode-shared-utils')
+const { colors, clearConsole, icodeLog, runWithSpinner } = require('@icode-js/icode-shared-utils')
 const pkg = require('../../package.json')
 const { getNpmSemverVersion } = require('./updataCli')
 
 exports.generateTitle = async function () {
-    let newPackageVersion = await postAction()
+    icodeLog.verbose('', '正在检查版本更新')
+    let newPackageVersion = null
+    await runWithSpinner(async () => {
+      newPackageVersion = await postAction()
+    }, '检查最新版本')
+
     let title = `
     _______________ ____________   _________    ____
    /  _/ ____/ __  / __  / ____/  / ____ / /   /  _/  

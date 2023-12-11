@@ -148,7 +148,7 @@ class GitCommand {
         let currentToken = config[this.currentServerName]
         if (!currentToken || parametes.refreshGitToken) {
             icodeLog.info('', `${parametes.refreshGitToken ? '替换' : '增加'}${this.currentServerName}平台Token. Token均为本地存储, 作者并不会获取.`)
-            if (['github', 'gitlab', 'gitee']) {
+            if (['github', 'gitlab', 'gitee'].includes(this.currentServerName)) {
                 icodeLog.info(`请点击生成:${terminalLink(colors.cyan(githelp[this.currentServerName]))}`)
             }
 
