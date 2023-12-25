@@ -428,7 +428,6 @@ class GitPush extends GitCommand {
         if (this.options?.message) {
             return this.options?.message
         }
-        debugger
         const { commitFix } = await inquirer.prompt([
             {
                 name: 'commitFix',

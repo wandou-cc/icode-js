@@ -22,13 +22,7 @@ class GitCommand {
         this.isNewRepo = false
         this.repoName = null
     }
-    /*
-        这里的逻辑需要处理
-            ？？？？？
-            先检查本地是否有git 
-            有就获取当前仓库的名称
-            没有就获取package.json 中的名字
-    */
+
     async init() {
         return new Promise((resolve, reject) => {
             let chain = Promise.resolve()
@@ -59,7 +53,6 @@ class GitCommand {
             // 检查远程仓库存在不存在
             chain = chain.then(() => this.checkGitRepo())
 
-
             // 关联远程地址
             chain = chain.then(() => this.remoteBranch())
         
@@ -70,8 +63,17 @@ class GitCommand {
     async getRepoName() {
         let remotesName = await this.icodeGitServer.getRepoDetails()
         if (!remotesName) {
-            remotesName = this.packageJsonInfo.name
+            icodeLog.warn('', '当前项目未关联远程仓库,默认将使用项目名称。')
+            // remotesName = this.packageJsonInfo.name
+            let { name } = await inquirer.prompt({
+                type: 'input',
+                name: 'name',
+                message: '是否是用项目名称,如需更改请输入:',
+                default: this.packageJsonInfo.name
+            })
+            remotesName = name
         }
+
         return remotesName
     }
 
@@ -380,23 +382,24 @@ class GitCommand {
 
     checkPackage() {
         const projectPath = process.cwd()
-        const pkgPath = path.resolve(projectPath, 'package.json')
-        if (!fs.existsSync(pkgPath)) {
-            icodeLog.warn('', '当前目录' + projectPath)
-            icodeLog.error('', '找不到package.json')
-            process.exit()
-        }
+        const name = path.basename(projectPath)
 
-        const pkg = fs.readJSONSync(pkgPath)
-        const { name, version } = pkg
-        if (!name || !version) {
-            icodeLog.error('', 'package.json缺少配置项')
-            process.exit()
-        }
+        // const pkgPath = path.resolve(projectPath, 'package.json')
+        // if (!fs.existsSync(pkgPath)) {
+        //     icodeLog.warn('', '当前目录' + projectPath)
+        //     icodeLog.error('', '找不到package.json')
+        //     process.exit()
+        // }
+
+        // const pkg = fs.readJSONSync(pkgPath)
+        // const { name, version } = pkg
+        // if (!name || !version) {
+        //     icodeLog.error('', 'package.json缺少配置项')
+        //     process.exit()
+        // }
 
         return {
             name,
-            version,
             projectPath
         }
     }
