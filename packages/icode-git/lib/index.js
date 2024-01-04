@@ -126,29 +126,12 @@ class icodeGit {
 
     // 切换分支
     async checkoutBranch(branch, hasRemote, hasLocal, options = {}) {
-        // let localBranchList = await this.getLocalBranchList()
         if (!hasLocal && !hasRemote) {
             throw new Error(`${branch}分支不存在,如果您需要新建或者同步远程的${branch}分支。请使用icode checkout 指令`)
         } else {
             await this.git.fetch()
             await this.git.checkout(branch)
         }
-        // // 如果远程有本地没有那就进行新建分支并同步远程
-        // if (hasRemote && !hasLocal) {
-        //     await this.git.checkoutBranch(branch, `${ this.repo.default_branch || this.repo.relation }`)
-        //     // await this.pullOriginBranch(this.repo.default_branch || this.repo.relation, options)
-        // } 
-
-        // // 如果本地有远程没有那就切换分支
-        // if(!hasRemote && hasLocal) {
-        //     await this.git.checkout(branch)
-        // }
-
-        // // 如果都有 那就切换并拉取
-        // if(hasRemote && hasLocal) {
-        //     await this.git.checkout(branch)
-        //     // await this.pullOriginBranch(this.repo.default_branch || this.repo.relation, options)
-        // }
     }
 
 
@@ -162,22 +145,20 @@ class icodeGit {
             有进行拉取
         是否需要同步主分支
     */
-    async createBranch(branch, fromBranch, options = {}, pullMaster) {
-        let localBranchList = await this.getLocalBranchList()
-        if (localBranchList.all.includes(branch)) {
-            await this.git.checkout(branch);
-        } else {
+    async checkoutLocalBranch(branch) {
+        try {
+            this.git.checkout(branch)
+        } catch(e) {
+            throw new Error(e)
+        }
+    }
+
+    async createBranch(branch, fromBranch) {
+        try {
             await this.git.checkoutBranch(branch, `${fromBranch || this.repo.default_branch || this.repo.relation}`)
+        } catch(e) {
+            throw new Error(e)
         }
-
-        // if(hasRemote !== 0) {
-        //     await this.pullOriginBranch(fromBranch || this.repo.default_branch || this.repo.relation, options)
-        // }
-
-        if (pullMaster) {
-            await this.pullOriginBranch(this.repo.default_branch || this.repo.relation, options)
-        }
-        // pullMaster && hasRemote !== 0 && await this.pullOriginBranch(fromBranch || this.repo.default_branch || this.repo.relation, options)
     }
 
     // 获取本地分支名
@@ -357,9 +338,5 @@ class icodeGit {
             throw new Error(e)
         }
     }
-
-
-
-
 }
 module.exports = icodeGit

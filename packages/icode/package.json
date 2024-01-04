@@ -24,8 +24,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@icode-js/icode-git": "^1.0.2",
-    "@icode-js/icode-shared-utils": "^1.0.3",
+    "@icode-js/icode-git": "file:../icode-git",
+    "@icode-js/icode-shared-utils": "file:../icode-shared-utils",
     "axios": "^1.6.2",
     "commander": "^11.1.0",
     "fs-extra": "^11.1.1",

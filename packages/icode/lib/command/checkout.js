@@ -1,5 +1,5 @@
 
-const { icodeLog, runWithSpinner} = require('@icode-js/icode-shared-utils')
+const { icodeLog, runWithSpinner, inquirer } = require('@icode-js/icode-shared-utils')
 const GitCommand = require('./command-git')
 // const inquirer = require('inquirer')
 /*
@@ -30,19 +30,43 @@ class GitCheckout extends GitCommand {
         }
         this.remoteBranchList = await this.icodeGitServer.getRemoteBranchList(this.login, this.repoName)
         try {
-            let filterBranch = this.remoteBranchList.filter(item => item.name === this.branch)
-            // 创建分支
-            await runWithSpinner(async () => {
-                await this.icodeGitServer.createBranch(this.branch, this.baseBranch, pullOption, this.options?.pullMainBranch)
-            }, '创建/切换分支')
+            let hasRemoteCurrentBranch = this.remoteBranchList.filter(item => item.name === this.branch).length !== 0
+            let localBranchList = await this.icodeGitServer.getLocalBranchList()
+            let hasLocalCurrentBranch = localBranchList.all.includes(this.branch)
+            if (hasLocalCurrentBranch) {
+                await runWithSpinner(async () => {
+                    await this.icodeGitServer.checkoutLocalBranch(this.branch)
+                }, `切换${this.branch}分支`)
+            } else {
+                let { hasConfirm } = await inquirer.prompt([
+                    {
+                        name: 'hasConfirm',
+                        type: 'confirm',
+                        message: `本地没有该分支是否新建分支?`,
+                        default: true
+                    }
+                ])
+                if (hasConfirm) {
+                    await runWithSpinner(async () => {
+                        await this.icodeGitServer.createBranch(this.branch, this.baseBranch)
+                    }, `新建${this.branch}分支`)
+                }
+            }
+
             // 远程是否有当前分支
-            if (filterBranch.length !== 0) {
+            if (hasRemoteCurrentBranch) {
                 await runWithSpinner(async () => {
                     await this.icodeGitServer.pullOriginBranch(this.branch, pullOption)
                 }, `拉取${this.branch}分支`)
                 icodeLog.verbose('', `${this.branch} 分支拉取成功！`)
             } else {
                 icodeLog.verbose('', `远程没有${this.branch}分支,不执行拉取操作`)
+            }
+
+            if (this.options?.pullMainBranch) {
+                await runWithSpinner(async () => {
+                    await this.icodeGitServer.pullOriginBranch(this.repo.default_branch || this.repo.relation, pullOption)
+                }, `拉取主分支`)
             }
 
             // 提交远程
@@ -54,9 +78,7 @@ class GitCheckout extends GitCommand {
         } catch (e) {
             icodeLog.error('', e.message)
         }
-
     }
-
 }
 
 function initCheckout(branch, baseBranch, options) {
