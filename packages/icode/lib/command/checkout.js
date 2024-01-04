@@ -28,7 +28,9 @@ class GitCheckout extends GitCommand {
             '--no-rebase': true,
             '--allow-unrelated-histories': true
         }
-        this.remoteBranchList = await this.icodeGitServer.getRemoteBranchList(this.login, this.repoName)
+        await runWithSpinner(async () => {
+            this.remoteBranchList = await this.icodeGitServer.getRemoteBranchList(this.login, this.repoName)
+        }, '获取远程所有分支')
         try {
             let hasRemoteCurrentBranch = this.remoteBranchList.filter(item => item.name === this.branch).length !== 0
             let localBranchList = await this.icodeGitServer.getLocalBranchList()
@@ -53,6 +55,12 @@ class GitCheckout extends GitCommand {
                 }
             }
 
+            if (this.options?.pullMainBranch) {
+                await runWithSpinner(async () => {
+                    await this.icodeGitServer.pullOriginBranch(this.repo.default_branch || this.repo.relation, pullOption)
+                }, `拉取主分支`)
+            }
+
             // 远程是否有当前分支
             if (hasRemoteCurrentBranch) {
                 await runWithSpinner(async () => {
@@ -61,12 +69,6 @@ class GitCheckout extends GitCommand {
                 icodeLog.verbose('', `${this.branch} 分支拉取成功！`)
             } else {
                 icodeLog.verbose('', `远程没有${this.branch}分支,不执行拉取操作`)
-            }
-
-            if (this.options?.pullMainBranch) {
-                await runWithSpinner(async () => {
-                    await this.icodeGitServer.pullOriginBranch(this.repo.default_branch || this.repo.relation, pullOption)
-                }, `拉取主分支`)
             }
 
             // 提交远程

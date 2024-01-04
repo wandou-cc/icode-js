@@ -147,7 +147,7 @@ class icodeGit {
     */
     async checkoutLocalBranch(branch) {
         try {
-            this.git.checkout(branch)
+           await this.git.checkout(branch)
         } catch(e) {
             throw new Error(e)
         }
