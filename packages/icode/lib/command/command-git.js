@@ -140,10 +140,6 @@ class GitCommand {
         })
     }
 
-    // async setBanBranch() {
-
-    // }
-
     // 查看托管平台token
     async checkGitServerToken(parametes) {
         let config = readConfig('catchServerToken')
@@ -188,7 +184,7 @@ class GitCommand {
             {
                 type: 'input',
                 name: 'baseUrl',
-                message: '请输入仓库主域名 https://XXXXX.XX/',
+                message: '请输入仓库主域名 https://XXXXX.XX',
                 default: '',
                 validate(value) {
                     return !value.length ? new Error('仓库主域名不能为空') : true
@@ -298,8 +294,6 @@ class GitCommand {
             await runWithSpinner(async () => {
                 repo = await this.icodeGitServer.thereRemoteRepo(this.login, this.repoName)
             }, '获取远程仓库')
-
-
         } catch (e) {
             icodeLog.error('', e.message)
             process.exit()

@@ -1,15 +1,12 @@
 'use strict';
 
-// const fs = require('fs')
 const program = require('commander')
-// const userHome = require('user-home')
 const semver = require('semver')
 const pkg = require('../package.json')
 const { icodeLog, colors, checkConfig } = require('@icode-js/icode-shared-utils')
 
 module.exports = async () => {
     checkNodeVersion(pkg.engines.node)
-    // checkUserHome()
     checkConfig()
     checkRoot()
     registerCommand()
@@ -21,15 +18,6 @@ function checkNodeVersion(wanted) {
         process.exit()
     }
 }
-
-// function checkUserHome() {
-//     if (!userHome || !fs.existsSync(userHome)) {
-//         icodeLog.error('', '用户主目录不存在')
-//         process.exit()
-//     } else {
-//         process.env.ICODE_USER_HOME = userHome
-//     }
-// }
 
 function checkRoot() {
     const rootCheck = require('root-check')
@@ -63,7 +51,7 @@ function registerCommand() {
         })
 
     program
-        .command('push  [branchName...]')
+        .command('push [branchName...]')
         .description('提交代码/本地或者远程提交')
         .option('-o, --origin', '使用远程合并方案')
         .option('-y, --yes', '选项全部设置成yes')
@@ -125,16 +113,6 @@ function registerCommand() {
             suggestCommands(cmd) // 进行模糊匹配
             process.exit()
         })
-
-    // program.hook('postAction', async () => {
-    //     console.log('在这里检查更新')
-    //     debugger
-    //     // const currentVersion = pkg.version
-    //     // const currentPkgName = '@icode-js/icode'
-
-    //     // let newPackageVersion = await getNpmSemverVersion(currentVersion, currentPkgName)
-    //     // console.log(newPackageVersion)
-    // })
 
     program.on('--help', () => {
         console.log()

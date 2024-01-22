@@ -1,7 +1,6 @@
 
 const { icodeLog, runWithSpinner, inquirer } = require('@icode-js/icode-shared-utils')
 const GitCommand = require('./command-git')
-// const inquirer = require('inquirer')
 /*
     * checkout 命令如果本地没有当前输入的分支 将会从第二个参数 或者是从主分支进行创建
     * 

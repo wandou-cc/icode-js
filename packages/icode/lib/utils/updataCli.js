@@ -21,13 +21,12 @@ function getNpmPackageInfo(packageName, npmOrigin) {
 // 默认使用 淘宝镜像
 function getDefaultOrigin(npmOrigin = false) {
     icodeLog.verbose('', `当前是否是npm源: ${npmOrigin}`)
-    return npmOrigin ? 'https://registry.npmjs.org' : 'https://registry.npm.taobao.org'
+    return npmOrigin ? 'https://registry.npmjs.org' : 'https://registry.npmmirror.com'
 }
 
 // 解析版本号
 async function analyZeVersion(packageName, origin) {
     icodeLog.verbose('', '解析版本号中')
-
     let packageInfo = await getNpmPackageInfo(packageName, origin)
     if (packageInfo) {
         return Object.keys(packageInfo.versions)
