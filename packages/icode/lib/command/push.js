@@ -362,7 +362,6 @@ class GitPush extends GitCommand {
                 icodeLog.error('', e.message)
                 process.exit()
             }
-
             // 远程是否有当前分支
             let filterBranch = this.remoteBranchList.filter(item => item.name === this.currentBranch)
             if (filterBranch.length !== 0) {

@@ -59,14 +59,37 @@ class icodeGit {
         return remotes
     }
 
-    async getRepoDetails() {
+    async getRemoteDetails() {
         try {
             const remotes = await this.git.getRemotes(true)
             const origin = remotes.find(remote => remote.name === 'origin')
             if (origin) {
-                const urlParts = origin.refs.fetch.split('/')
-                const repoName = urlParts[urlParts.length - 1].replace(/\.git$/, '')
-                return repoName
+                const urlParts = origin.refs.fetch
+
+                // const urlParts = 'https://code.shouqiev.net/web/h5-customerservice.git'
+                // const urlParts = 'ssh://git@code.shouqiev.net:6666/web/h5-customerservice.git'
+
+                // const repoName = urlParts[urlParts.length - 1].replace(/\.git$/, '')
+                // const sshOrHttp = urlParts[0]
+                // const url = 'ssh://git@code.shouqiev.net:6666/web/h5-customerservice.git';
+                // 提取协议
+
+                const protocol = urlParts.match(/^(ssh|https|git):\/\//)[1]
+                // 提取域名
+                // const domain = urlParts.match(/(@|\/\/)(.*?):/)[1]
+                // 提取端口号
+                // const portMatch = urlParts.match(/:(\d+)/)
+                // const port = portMatch ? portMatch[1] : '443' // 如果没有端口号，默认为443
+                // 提取仓库名称
+                const repoMatch = urlParts.match(/\/([^\/]+)\.git$/)
+                const repoName = repoMatch ? repoMatch[1] : ''
+                return { 
+                    protocol,
+                    // domain,
+                    // port,
+                    repoName,
+                    urlParts
+                 }
             } else {
                 return null
             }
@@ -147,8 +170,8 @@ class icodeGit {
     */
     async checkoutLocalBranch(branch) {
         try {
-           await this.git.checkout(branch)
-        } catch(e) {
+            await this.git.checkout(branch)
+        } catch (e) {
             throw new Error(e)
         }
     }
@@ -156,7 +179,7 @@ class icodeGit {
     async createBranch(branch, fromBranch) {
         try {
             await this.git.checkoutBranch(branch, `${fromBranch || this.repo.default_branch || this.repo.relation}`)
-        } catch(e) {
+        } catch (e) {
             throw new Error(e)
         }
     }
@@ -183,7 +206,11 @@ class icodeGit {
     // 拉取分支
     async pullOriginBranch(branch, options) {
         try {
-            await this.git.pull('origin', branch, options)
+            await this.git.outputHandler((command, stdout, stderr) => {
+                console.log(stdout);
+                console.log('==========')
+                console.log(stderr);
+            }).pull('origin', branch, options)
         } catch (e) {
             throw new Error(e)
         }
@@ -334,6 +361,14 @@ class icodeGit {
     async addRepoTag(login, name, tag, message, branch) {
         try {
             return this.gitInstance.addRepoTag(login, name, tag, message, branch)
+        } catch (e) {
+            throw new Error(e)
+        }
+    }
+
+    async listRemote(remoteUrl) {
+        try {
+            return await this.git.listRemote([remoteUrl])
         } catch (e) {
             throw new Error(e)
         }

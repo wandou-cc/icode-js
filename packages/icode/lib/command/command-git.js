@@ -28,13 +28,14 @@ class GitCommand {
             let chain = Promise.resolve()
             chain = chain.then(() => generateTitle())
 
-            // 检查当前项目有没有.git 文件
             chain = chain.then(async () => {
-                await this.checkGitInit()
+                let remoteInfo = await this.getRemoteInfo()
+                this.repoName = remoteInfo.repoName || null
+                await this.schedulSSHOrHTTPS(remoteInfo)
             })
+
             // 检查是否有缓存
             chain = chain.then(async () => {
-                this.repoName = await this.getRepoName()
                 await this.checkPackageCache(this.options)
                 if (!['github', 'gitlab', 'gitee'].includes(this.currentServerName)) {
                     let companyConfig = readConfig('companyGitlabConfig')
@@ -43,6 +44,12 @@ class GitCommand {
                     process.env.ICODE_REMOEURL = companyInfo.remoteUrl
                 }
             })
+
+            // 检查当前项目有没有.git 文件
+            chain = chain.then(async () => {
+                await this.checkGitInit()
+            })
+
             // 检查是否有token
             chain = chain.then(async () => {
                 let token = await this.checkGitServerToken(this.options)
@@ -55,26 +62,58 @@ class GitCommand {
 
             // 关联远程地址
             chain = chain.then(() => this.remoteBranch())
-        
+
             chain = chain.then(() => resolve())
         })
     }
 
-    async getRepoName() {
-        let remotesName = await this.icodeGitServer.getRepoDetails()
-        if (!remotesName) {
+    async getRemoteInfo() {
+        let { protocol, urlParts, repoName } = await this.icodeGitServer.getRemoteDetails()
+        if (!repoName) {
             icodeLog.warn('', '当前项目未关联远程仓库,默认将使用项目名称。')
-            // remotesName = this.packageJsonInfo.name
             let { name } = await inquirer.prompt({
                 type: 'input',
                 name: 'name',
                 message: '是否是用项目名称,如需更改请输入:',
                 default: this.packageJsonInfo.name
             })
-            remotesName = name
+            repoName = name
         }
+        return { protocol, repoName, urlParts }
+    }
 
-        return remotesName
+    async schedulSSHOrHTTPS(config) {
+        let { protocol, urlParts } = config
+        try {
+            await this.icodeGitServer.listRemote(urlParts)
+            icodeLog.success('', protocol + '可用!')
+        } catch (e) {
+            let errorStr = protocol === 'ssh' || protocol === 'git' ? `SSH不可用,请先生成密钥` : 'HTTPS不可用请先配置账号密码'
+            icodeLog.error('', errorStr)
+            
+            if (protocol === 'ssh' || protocol === 'git') {
+                let { isCreateSSH } = await inquirer.prompt([
+                    {
+                        type: 'confirm',
+                        name: 'isCreateSSH',
+                        message: '是否生成当前SSH密钥',
+                        default: true
+                    }
+                ])
+                if (!isCreateSSH) return
+                let { protocol } = await inquirer.prompt([
+                    {
+                        type: 'input',
+                        name: 'protocol',
+                        message: '请输出生成SSH命令',
+                        default: 'ssh-keygen -t ed25519 -C "icode-git" -f icode-git'
+                    }
+                ])
+
+            }
+
+            process.exit()
+        }
     }
 
     // 查看项目缓存
