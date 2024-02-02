@@ -1,5 +1,6 @@
 const fs = require('fs-extra')
 const path = require('path')
+const os = require('os')
 const terminalLink = require('terminal-link');
 const icodeGit = require('@icode-js/icode-git')
 const { icodeLog, readConfig, writeConfig, colors, inquirer, runWithSpinner } = require('@icode-js/icode-shared-utils')
@@ -90,7 +91,7 @@ class GitCommand {
         } catch (e) {
             let errorStr = protocol === 'ssh' || protocol === 'git' ? `SSH不可用,请先生成密钥` : 'HTTPS不可用请先配置账号密码'
             icodeLog.error('', errorStr)
-            
+
             if (protocol === 'ssh' || protocol === 'git') {
                 let { isCreateSSH } = await inquirer.prompt([
                     {
@@ -101,18 +102,32 @@ class GitCommand {
                     }
                 ])
                 if (!isCreateSSH) return
-                let { protocol } = await inquirer.prompt([
+                let { ssh } = await inquirer.prompt([
                     {
                         type: 'input',
-                        name: 'protocol',
+                        name: 'ssh',
                         message: '请输出生成SSH命令',
                         default: 'ssh-keygen -t ed25519 -C "icode-git" -f icode-git'
                     }
                 ])
-
+                await this.createSSH(ssh)
             }
-
             process.exit()
+        }
+    }
+
+    async createSSH(command) {
+        const { execSync } = require('child_process')
+        const homeDir = os.homedir()
+        const sshDir = path.join(homeDir, '.ssh')
+
+        icodeLog.verbose('', `ssh地址:${sshDir}`)
+
+        try {
+            const output = execSync(`${command} -f ${sshDir}`)
+            console.log(`命令的输出：${output}`)
+        } catch (error) {
+            console.error(`执行命令时发生错误：${error}`)
         }
     }
 

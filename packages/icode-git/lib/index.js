@@ -206,11 +206,7 @@ class icodeGit {
     // 拉取分支
     async pullOriginBranch(branch, options) {
         try {
-            await this.git.outputHandler((command, stdout, stderr) => {
-                console.log(stdout);
-                console.log('==========')
-                console.log(stderr);
-            }).pull('origin', branch, options)
+            await this.git.pull('origin', branch, options)
         } catch (e) {
             throw new Error(e)
         }
