@@ -95,3 +95,21 @@ sudo npm i -g icode-js
 `info`
 
 这个命令就是查看当前系统的一些环境变量
+
+## 多环境SSH配置
+
+可以在用户主目录下的`.ssh`目录下新建`config`文件
+
+```sh
+Host github.com
+HostName ssh.github.com
+User xxxx@gmail.com
+IdentityFile ~/.ssh/xxx // 对应上文件
+PreferredAuthentications publickey
+
+Host gitee.com
+HostName gitee.com
+User xxx
+IdentityFile ~/.ssh/xxx // 对应上文件
+PreferredAuthentications publickey
+```

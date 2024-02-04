@@ -1,5 +1,37 @@
 # icode-js
 
+<p>
+  <a  target="_blank" href="https://github.com/wandou-cc/icode-js">
+    <img alt="GitHub tag (latest by date)" src="https://img.shields.io/github/v/tag/wandou-cc/icode-js">
+  </a>
+  <a  target="_blank" href="https://github.com/wandou-cc/icode-js">
+      <img src="https://img.shields.io/github/stars/wandou-cc/icode-js?style=flat-square"/>
+  </a>
+  <br >
+  <a  target="_blank" href="https://github.com/wandou-cc/icode-js">
+    <img src="https://hits.b3log.org/wandou-cc/icode-js.svg">
+  </a>
+  <a  target="_blank" href="https://github.com/wandou-cc/icode-js">
+    <img src="https://img.shields.io/github/commit-activity/y/wandou-cc/icode-js?style=flat-square"/>
+  </a>
+  <a  target="_blank" href="https://github.com/wandou-cc/icode-js">
+     <img src="https://img.shields.io/github/last-commit/wandou-cc/icode-js?style=flat-square"/>
+  </a>
+  <br>
+  <a  target="_blank" href="https://github.com/wandou-cc/icode-js/issues">
+    <img src="https://img.shields.io/github/issues/wandou-cc/icode-js?style=flat-square"/>
+  </a>
+  <a  target="_blank" href="https://github.com/wandou-cc/icode-js/issues?q=is%3Aissue+is%3Aclosed">
+      <img src="https://img.shields.io/github/issues-closed/wandou-cc/icode-js?style=flat-square"/>
+  </a>
+  <a  target="_blank" href="https://github.com/wandou-cc/icode-js/pulls">
+      <img src="https://img.shields.io/github/issues-pr/wandou-cc/icode-js?style=flat-square"/>
+  </a>
+  <a  target="_blank" href="https://github.com/wandou-cc/icode-js">
+    <img src="https://img.shields.io/github/watchers/wandou-cc/icode-js?style=flat-square"/>
+  </a>
+</p>
+
 集成基于`github/gitee/gitlab/公司内部gitlab`提交操作并支持动态更改项目仓库 支持自定义公司内部gitlab项目管理。简化操作，上手简单，只需一条命令提交多个仓库，自动进行拉取、合并、冲突检查。后续将会加入云构建等。  
 在第一次使用的时候会又一些配置这个是正常的 比如配置当前项目应该用哪个平台, 配置**token** 等
 **token**在这里说明一下 作者并不会获取你的token都是存储在本地的请放心'食用'
@@ -54,7 +86,7 @@ sudo npm i -g icode-js
 `config`
 
 进行脚手架的一些配置, 当脚手架执行的时候会在用户主目录生成一个配置文件叫 `.icode` 用来存储Token/项目信息等
-这里说一下**给某个项目添加受限制的分支**即可这个选项是为了避免用户在某个项目下没留意当前分支导致合并错误代码的一个功能
+这里说一下**给某个项目添加受限制的分支**即可，这个选项是为了避免用户在某个项目下没留意当前分支导致合并错误代码的一个功能
 比如我们在开发中有test分支dev分支 我们是不应该将这样的分支进行合并到其他分支的 所以我们可以利用这个配置项添加上述两个分支
 这样在`push`的时候就会提示是否继续合并还是只提交当前分支
 
@@ -63,3 +95,21 @@ sudo npm i -g icode-js
 `info`
 
 这个命令就是查看当前系统的一些环境变量
+
+## 多环境SSH配置
+
+可以在用户主目录下的`.ssh`目录下新建`config`文件
+
+```sh
+Host github.com
+HostName ssh.github.com
+User xxxx@gmail.com
+IdentityFile ~/.ssh/xxx // 对应上文件
+PreferredAuthentications publickey
+
+Host gitee.com
+HostName gitee.com
+User xxx
+IdentityFile ~/.ssh/xxx // 对应上文件
+PreferredAuthentications publickey
+```

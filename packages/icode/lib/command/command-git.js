@@ -1,9 +1,9 @@
 const fs = require('fs-extra')
 const path = require('path')
 const os = require('os')
-const terminalLink = require('terminal-link');
+const terminalLink = require('terminal-link')
 const icodeGit = require('@icode-js/icode-git')
-const { icodeLog, readConfig, writeConfig, colors, inquirer, runWithSpinner } = require('@icode-js/icode-shared-utils')
+const { icodeLog, readConfig, writeConfig, colors, inquirer, runWithSpinner, readline } = require('@icode-js/icode-shared-utils')
 const githelp = require('../utils/gitHelp')
 const { generateTitle } = require('../utils/generateTitle')
 
@@ -28,8 +28,14 @@ class GitCommand {
         return new Promise((resolve, reject) => {
             let chain = Promise.resolve()
             chain = chain.then(() => generateTitle())
+            // 检查当前项目有没有.git 文件
+            chain = chain.then(async () => {
+                icodeLog.verbose('', '检查当前项目是否初始化git')
+                await this.checkGitInit()
+            })
 
             chain = chain.then(async () => {
+                icodeLog.info('', '检查当前项目关联地址SSH或HTTPS是否可用,如果卡死请直接强制关闭,并检查网络')
                 let remoteInfo = await this.getRemoteInfo()
                 this.repoName = remoteInfo.repoName || null
                 await this.schedulSSHOrHTTPS(remoteInfo)
@@ -37,6 +43,7 @@ class GitCommand {
 
             // 检查是否有缓存
             chain = chain.then(async () => {
+                icodeLog.verbose('', '检查是否有缓存')
                 await this.checkPackageCache(this.options)
                 if (!['github', 'gitlab', 'gitee'].includes(this.currentServerName)) {
                     let companyConfig = readConfig('companyGitlabConfig')
@@ -46,13 +53,9 @@ class GitCommand {
                 }
             })
 
-            // 检查当前项目有没有.git 文件
-            chain = chain.then(async () => {
-                await this.checkGitInit()
-            })
-
             // 检查是否有token
             chain = chain.then(async () => {
+                icodeLog.verbose('', '检查TOKEN')
                 let token = await this.checkGitServerToken(this.options)
                 await this.icodeGitServer.createGitServer(this.currentServerName, token)
             })
@@ -86,7 +89,8 @@ class GitCommand {
     async schedulSSHOrHTTPS(config) {
         let { protocol, urlParts } = config
         try {
-            await this.icodeGitServer.listRemote(urlParts)
+            let lsRemoteRes = await this.icodeGitServer.listRemote(urlParts)
+            icodeLog.verbose('', lsRemoteRes)
             icodeLog.success('', protocol + '可用!')
         } catch (e) {
             let errorStr = protocol === 'ssh' || protocol === 'git' ? `SSH不可用,请先生成密钥` : 'HTTPS不可用请先配置账号密码'
@@ -102,33 +106,78 @@ class GitCommand {
                     }
                 ])
                 if (!isCreateSSH) return
-                let { ssh } = await inquirer.prompt([
+                let { sshName, keyType, comment } = await inquirer.prompt([
                     {
                         type: 'input',
-                        name: 'ssh',
-                        message: '请输出生成SSH命令',
-                        default: 'ssh-keygen -t ed25519 -C "icode-git" -f icode-git'
+                        name: 'sshName',
+                        message: '请输入名称：',
+                        default: 'icode-js-ssh',
+                        validate: (name) => {
+                            return !name ? new Error('名称不能为空!') : true
+                        }
+                    },
+                    {
+                        type: 'list',
+                        name: 'keyType',
+                        message: '请选择密钥类型：',
+                        choices: ['rsa', 'ed25519'],
+                        default: 'ed25519'
+                    },
+                    {
+                        type: 'input',
+                        name: 'comment',
+                        message: '请输入密钥备注：',
+                        default: 'your_email@example.com'
                     }
                 ])
-                await this.createSSH(ssh)
+                await this.createSSH(sshName, keyType, comment)
             }
             process.exit()
         }
     }
 
-    async createSSH(command) {
-        const { execSync } = require('child_process')
-        const homeDir = os.homedir()
-        const sshDir = path.join(homeDir, '.ssh')
+    async createSSH(sshName, keyType, comment) {
+        return new Promise(async (resolve, reject) => {
+            const { spawn } = require('child_process')
+            const homeDir = os.homedir()
+            const sshDir = path.join(homeDir, `.ssh/${sshName}`)
+            icodeLog.verbose('', `ssh地址:${sshDir}`)
+            try {
+                const keyGenParams = ['-t', keyType, '-C', comment, '-f', sshDir, '-N', '']
+                const sshKeyGen = spawn('ssh-keygen', keyGenParams)
+                const rl = readline.createInterface({
+                    input: process.stdin,
+                    output: process.stdout
+                })
 
-        icodeLog.verbose('', `ssh地址:${sshDir}`)
+                sshKeyGen.stdout.on('data', (data) => {
+                    const str = data.toString()
+                    rl.question(str, (answer) => {
+                        sshKeyGen.stdin.write(`${answer}\n`)
+                    })
+                })
 
-        try {
-            const output = execSync(`${command} -f ${sshDir}`)
-            console.log(`命令的输出：${output}`)
-        } catch (error) {
-            console.error(`执行命令时发生错误：${error}`)
-        }
+                sshKeyGen.stderr.on('data', (data) => {
+                    reject(error)
+                })
+
+                sshKeyGen.on('close', (code) => {
+                    if (code === 0) {
+                        let nameString = `${sshName}.pub`
+                        console.log(`SSH 密钥生成成功, 路径: ${colors.cyan(sshDir)}, 请将 ${colors.cyan(nameString)} 复制并添加到平台对应处!`)
+                        console.log(`如果您有多个平台, 请配置${colors.cyan('config')}, 教程可以看${colors.cyan(terminalLink('https://www.npmjs.com/package/@icode-js/icode'))}`)
+                        resolve()
+                    } else {
+                        console.error(`SSH 密钥生成失败，退出码 ${code}`)
+                        process.exit()
+                    }
+                })
+
+            } catch (error) {
+                console.error(`执行命令时发生错误：${error}`)
+            }
+        })
+
     }
 
     // 查看项目缓存
@@ -252,8 +301,8 @@ class GitCommand {
                 message: '请输入仓库前缀地址 [ssh://git@XXXXX.com]/xxxxxxx.git',
                 default: '',
                 validate(value) {
-                    const urlPattern = /^(https?:\/\/|ssh)/
-                    return !urlPattern.test(value) ? new Error('请输入以http:// 或者 https:// 或者 ssh 开头的仓库地址前缀,只需要[]部分') : true
+                    const urlPattern = /^(https?:\/\/|ssh|git)/
+                    return !urlPattern.test(value) ? new Error('请输入以http:// 或者 https:// 或者 ssh、git 开头的仓库地址前缀,只需要[]部分') : true
                 }
             }
         ])
@@ -272,7 +321,6 @@ class GitCommand {
         writeConfig('companyGitlabConfig', config)
 
         return gitServerName
-
     }
 
     // 获取个人以及组织信息
@@ -431,21 +479,6 @@ class GitCommand {
     checkPackage() {
         const projectPath = process.cwd()
         const name = path.basename(projectPath)
-
-        // const pkgPath = path.resolve(projectPath, 'package.json')
-        // if (!fs.existsSync(pkgPath)) {
-        //     icodeLog.warn('', '当前目录' + projectPath)
-        //     icodeLog.error('', '找不到package.json')
-        //     process.exit()
-        // }
-
-        // const pkg = fs.readJSONSync(pkgPath)
-        // const { name, version } = pkg
-        // if (!name || !version) {
-        //     icodeLog.error('', 'package.json缺少配置项')
-        //     process.exit()
-        // }
-
         return {
             name,
             projectPath
@@ -453,12 +486,4 @@ class GitCommand {
     }
 
 }
-
-// function command(options) {
-//     let gitCommand = new GitCommand(options)
-
-//     console.log(gitCommand)
-
-// }
-
 module.exports = GitCommand

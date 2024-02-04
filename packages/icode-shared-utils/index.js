@@ -4,3 +4,4 @@
 
 exports.colors = require('colors')
 exports.inquirer = require('inquirer')
+exports.readline = require('readline')
