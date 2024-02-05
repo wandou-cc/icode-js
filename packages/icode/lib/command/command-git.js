@@ -21,7 +21,7 @@ class GitCommand {
         this.gitUrl = null
         this.mainBranch = 'master'
         this.isNewRepo = false
-        this.repoName = null
+        this.remoteInfo = null
     }
 
     async init() {
@@ -34,12 +34,7 @@ class GitCommand {
                 await this.checkGitInit()
             })
 
-            chain = chain.then(async () => {
-                icodeLog.info('', '检查当前项目关联地址SSH或HTTPS是否可用,如果卡死请直接强制关闭,并检查网络')
-                let remoteInfo = await this.getRemoteInfo()
-                this.repoName = remoteInfo.repoName || null
-                await this.schedulSSHOrHTTPS(remoteInfo)
-            })
+            chain = chain.then(async () => this.remoteInfo = await this.getRemoteInfo())
 
             // 检查是否有缓存
             chain = chain.then(async () => {
@@ -52,6 +47,17 @@ class GitCommand {
                     process.env.ICODE_REMOEURL = companyInfo.remoteUrl
                 }
             })
+
+            chain = chain.then(async () => {
+                process.env.GIT_SSH_COMMAND = 'ssh -o StrictHostKeyChecking=no'
+                icodeLog.info('', '检查当前项目关联地址SSH或HTTPS是否可用,如果卡死请直接强制关闭,并检查网络')
+                try {
+                    await this.schedulSSHOrHTTPS(this.remoteInfo)
+                } catch (e) {
+                    icodeLog.error('', e.message)
+                }
+            })
+
 
             // 检查是否有token
             chain = chain.then(async () => {
@@ -72,18 +78,24 @@ class GitCommand {
     }
 
     async getRemoteInfo() {
-        let { protocol, urlParts, repoName } = await this.icodeGitServer.getRemoteDetails()
-        if (!repoName) {
-            icodeLog.warn('', '当前项目未关联远程仓库,默认将使用项目名称。')
-            let { name } = await inquirer.prompt({
-                type: 'input',
-                name: 'name',
-                message: '是否是用项目名称,如需更改请输入:',
-                default: this.packageJsonInfo.name
-            })
-            repoName = name
+        try {
+            let { protocol, urlParts, repoName } = await this.icodeGitServer.getRemoteDetails()
+            icodeLog.verbose('', `protocol: ${protocol}, urlParts: ${urlParts}, repoName: ${repoName}`)
+            if (!repoName) {
+                icodeLog.warn('', '当前项目未关联远程仓库,默认将使用项目名称。')
+                let { name } = await inquirer.prompt({
+                    type: 'input',
+                    name: 'name',
+                    message: '是否是用项目名称,如需更改请输入:',
+                    default: this.packageJsonInfo.name
+                })
+                repoName = name
+            }
+            return { protocol, repoName, urlParts }
+        } catch (e) {
+            icodeLog.error('', e.message)
+            process.exit()
         }
-        return { protocol, repoName, urlParts }
     }
 
     async schedulSSHOrHTTPS(config) {
@@ -93,9 +105,8 @@ class GitCommand {
             icodeLog.verbose('', lsRemoteRes)
             icodeLog.success('', protocol + '可用!')
         } catch (e) {
-            let errorStr = protocol === 'ssh' || protocol === 'git' ? `SSH不可用,请先生成密钥` : 'HTTPS不可用请先配置账号密码'
+            let errorStr = protocol === 'ssh' || protocol === 'git' ? `SSH不可用,请先生成密钥` : 'HTTPS不可用请根据提示配置账号密码'
             icodeLog.error('', errorStr)
-
             if (protocol === 'ssh' || protocol === 'git') {
                 let { isCreateSSH } = await inquirer.prompt([
                     {
@@ -131,8 +142,8 @@ class GitCommand {
                     }
                 ])
                 await this.createSSH(sshName, keyType, comment)
+                process.exit()
             }
-            process.exit()
         }
     }
 
@@ -140,8 +151,16 @@ class GitCommand {
         return new Promise(async (resolve, reject) => {
             const { spawn } = require('child_process')
             const homeDir = os.homedir()
+
+            const directoryPath = path.join(homeDir, '.ssh')
+            if (!fs.existsSync(directoryPath)) {
+                fs.mkdirSync(directoryPath, { recursive: true })
+                icodeLog.verbose('', '目录创建成功')
+            } else {
+                icodeLog.verbose('', 'ssh目录已经存在')
+            }
             const sshDir = path.join(homeDir, `.ssh/${sshName}`)
-            icodeLog.verbose('', `ssh地址:${sshDir}`)
+            icodeLog.verbose('', `ssh地址: ${sshDir}`)
             try {
                 const keyGenParams = ['-t', keyType, '-C', comment, '-f', sshDir, '-N', '']
                 const sshKeyGen = spawn('ssh-keygen', keyGenParams)
@@ -157,34 +176,57 @@ class GitCommand {
                     })
                 })
 
-                sshKeyGen.stderr.on('data', (data) => {
+                sshKeyGen.stderr.on('data', (error) => {
                     reject(error)
                 })
 
-                sshKeyGen.on('close', (code) => {
+                sshKeyGen.on('close', async (code) => {
                     if (code === 0) {
-                        let nameString = `${sshName}.pub`
-                        console.log(`SSH 密钥生成成功, 路径: ${colors.cyan(sshDir)}, 请将 ${colors.cyan(nameString)} 复制并添加到平台对应处!`)
-                        console.log(`如果您有多个平台, 请配置${colors.cyan('config')}, 教程可以看${colors.cyan(terminalLink('https://www.npmjs.com/package/@icode-js/icode'))}`)
+                        // let nameString = `${sshName}.pub`
+                        icodeLog.info('', `SSH 密钥生成成功, 路径: ${colors.cyan(directoryPath)}, 请将对应公钥复制并添加到平台对应处!`)
+                        // icodeLog.info('', `如果您有多个平台, 请配置config, 教程可以看${terminalLink('README.md', colors.cyan('https://www.npmjs.com/package/@icode-js/icode'), {
+                        //     fallback: (text, url) => `- ${text}: ${url}`
+                        // })}`)
+                        this.createSSHConfig(directoryPath, sshDir, comment)
                         resolve()
                     } else {
-                        console.error(`SSH 密钥生成失败，退出码 ${code}`)
+                        icodeLog.error('', `SSH 密钥生成失败，退出码 ${code}`)
                         process.exit()
                     }
                 })
 
             } catch (error) {
-                console.error(`执行命令时发生错误：${error}`)
+                icodeLog.error('', `执行命令时发生错误：${error}`)
             }
         })
+    }
 
+    createSSHConfig(directoryPath, sshDir, comment) {
+        const configFile = path.join(directoryPath, 'config')
+        const configContent = `
+Host ${this.currentServerName}.com
+HostName ${this.currentServerName}.com
+User ${comment}
+IdentityFile ${sshDir}
+PreferredAuthentications publickey`
+
+        // 检查 config 文件是否存在
+        if (fs.existsSync(configFile)) {
+            // 追加内容到 config 文件
+            fs.appendFileSync(configFile, configContent)
+            icodeLog.verbose('', 'ssh已追加内容到 config 文件')
+        } else {
+            // 创建并写入内容到 config 文件
+            fs.writeFileSync(configFile, configContent)
+            icodeLog.verbose('', '已创建并写入内容到 config 文件')
+        }
     }
 
     // 查看项目缓存
     async checkPackageCache(parametes) {
         let config = readConfig('catchProject')
         let catchList = Object.keys(config || {})
-        let currentProject = config[this.repoName]
+        let currentProject = config[this.remoteInfo.repoName]
         let choicesList = [
             { name: 'Github', value: 'github' },
             { name: 'Gitee', value: 'gitee' },
@@ -206,7 +248,7 @@ class GitCommand {
             return acc
         }, [])
 
-        if (catchList.includes(this.repoName) && currentProject?.gitServer && serverList.includes(currentProject.gitServer) && !parametes.refreshGitServer) {
+        if (catchList.includes(this.remoteInfo.repoName) && currentProject?.gitServer && serverList.includes(currentProject.gitServer) && !parametes.refreshGitServer) {
             icodeLog.verbose('', `缓存中存在,托管平台为: ${currentProject?.gitServer}`)
             this.currentServerName = currentProject?.gitServer
             return
@@ -233,7 +275,7 @@ class GitCommand {
         }
 
         let writeConfigObj = {}
-        writeConfigObj[this.repoName] = {
+        writeConfigObj[this.remoteInfo.repoName] = {
             gitServer: currentServer
         }
         this.currentServerName = currentServer
@@ -250,7 +292,7 @@ class GitCommand {
         if (!currentToken || parametes.refreshGitToken) {
             icodeLog.info('', `${parametes.refreshGitToken ? '替换' : '增加'}${this.currentServerName}平台Token. Token均为本地存储, 作者并不会获取.`)
             if (['github', 'gitlab', 'gitee'].includes(this.currentServerName)) {
-                icodeLog.info(`请点击生成:${terminalLink(colors.cyan(githelp[this.currentServerName]))}`)
+                icodeLog.info('', `请点击生成:${terminalLink(colors.cyan(githelp[this.currentServerName]))}`)
             }
 
             const { token } = await inquirer.prompt({
@@ -326,7 +368,7 @@ class GitCommand {
     // 获取个人以及组织信息
     async checkGitOwner() {
         let config = readConfig('catchProject')
-        let { login, ownerType, orgId } = config[this.repoName]?.owner || {}
+        let { login, ownerType, orgId } = config[this.remoteInfo.repoName]?.owner || {}
         try {
             await runWithSpinner(async () => {
                 let { user, orgs } = await this.icodeGitServer.getGitUserAndOrgs()
@@ -378,7 +420,7 @@ class GitCommand {
 
                 ownerCatch.orgId = this.orgs.filter(item => item.path === ownerCatch.login)[0]?.id || ''
             }
-            config[this.repoName].owner = ownerCatch
+            config[this.remoteInfo.repoName].owner = ownerCatch
             writeConfig('catchProject', config)
             login = ownerCatch.login
             ownerType = ownerCatch.ownerType
@@ -394,7 +436,7 @@ class GitCommand {
         let repo = null
         try {
             await runWithSpinner(async () => {
-                repo = await this.icodeGitServer.thereRemoteRepo(this.login, this.repoName)
+                repo = await this.icodeGitServer.thereRemoteRepo(this.login, this.remoteInfo.repoName)
             }, '获取远程仓库')
         } catch (e) {
             icodeLog.error('', e.message)
@@ -407,7 +449,7 @@ class GitCommand {
                     icodeLog.verbose('', '开始创建个人仓库')
                     // 执行创建个人仓库
                     await runWithSpinner(async () => {
-                        repo = await this.icodeGitServer.createUserRepo(this.repoName)
+                        repo = await this.icodeGitServer.createUserRepo(this.remoteInfo.repoName)
                     }, '创建个人仓库')
                 } else if (this.ownerType === 'org') {
                     icodeLog.verbose('', '开始创建组织仓库')
@@ -421,7 +463,7 @@ class GitCommand {
                         }
                     }
                     await runWithSpinner(async () => {
-                        repo = await this.icodeGitServer.createOrgsRepo(idOrName, this.repoName)
+                        repo = await this.icodeGitServer.createOrgsRepo(idOrName, this.remoteInfo.repoName)
                     }, '创建组织仓库')
                 }
                 icodeLog.info('', `仓库创建成功,仓库id: ${repo.id}`)

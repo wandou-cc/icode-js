@@ -65,33 +65,19 @@ class icodeGit {
             const origin = remotes.find(remote => remote.name === 'origin')
             if (origin) {
                 const urlParts = origin.refs.fetch
-
-                // const urlParts = 'https://code.shouqiev.net/web/h5-customerservice.git'
-                // const urlParts = 'ssh://git@code.shouqiev.net:6666/web/h5-customerservice.git'
-
-                // const repoName = urlParts[urlParts.length - 1].replace(/\.git$/, '')
-                // const sshOrHttp = urlParts[0]
-                // const url = 'ssh://git@code.shouqiev.net:6666/web/h5-customerservice.git';
-                // 提取协议
-
-                const protocol = urlParts.match(/^(ssh|https|git):\/\//)[1]
-                // 提取域名
-                // const domain = urlParts.match(/(@|\/\/)(.*?):/)[1]
-                // 提取端口号
-                // const portMatch = urlParts.match(/:(\d+)/)
-                // const port = portMatch ? portMatch[1] : '443' // 如果没有端口号，默认为443
+                const match = urlParts.match(/^(ssh:\/\/|git@|https:\/\/)/)
+                let protocol = null
+                if (match) {
+                    protocol = match[0]
+                    // 使用正则替换来简化返回逻辑
+                    protocol = protocol.replace(/:\/\/|@/, '')
+                }
                 // 提取仓库名称
                 const repoMatch = urlParts.match(/\/([^\/]+)\.git$/)
                 const repoName = repoMatch ? repoMatch[1] : ''
-                return { 
-                    protocol,
-                    // domain,
-                    // port,
-                    repoName,
-                    urlParts
-                 }
+                return { protocol, repoName, urlParts }
             } else {
-                return null
+                return { protocol: null, repoName: null, urlParts: null }
             }
         } catch (err) {
             throw new Error(err)
