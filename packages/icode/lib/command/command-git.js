@@ -189,12 +189,11 @@ class GitCommand {
                     if (code === 0) {
                         icodeLog.info('', `SSH 密钥生成成功, 路径: ${colors.cyan(directoryPath)}`)
 
+                        // 读取文件
+                        let publickey = fs.readFileSync(`${sshDir}.pub`, 'utf-8')
+                        icodeLog.info('', `请将以下公钥复制到对应平台SSH处`)
+                        console.log('\n' + colors.cyan(publickey))
 
-
-
-
-
-                        
                         this.createSSHConfig(directoryPath, sshDir, comment)
                         resolve()
                     } else {
@@ -212,6 +211,7 @@ class GitCommand {
     createSSHConfig(directoryPath, sshDir, comment) {
         const configFile = path.join(directoryPath, 'config')
         const configContent = `
+
 Host ${this.sshHost}
 HostName ${this.sshHost}
 User ${comment}
