@@ -76,7 +76,6 @@ class Gitlab {
     async getRepoteBranchList(login, name) {
         let branches = []
         let page = 1
-
         while (true) {
             try {
                 let response = await this.request.get(`/projects/${login}%2F${name}/repository/branches?page=${page}&per_page=100`)
@@ -90,9 +89,7 @@ class Gitlab {
                 break
             }
         }
-
         return branches
-
     }
 
     // 检查分支是不是受保护分支

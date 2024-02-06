@@ -27,7 +27,7 @@ class GitPush extends GitCommand {
     }
 
     async createWaitBranchList() {
-        let banMergeBanch = readConfig(`catchProject`)[this.repoName]
+        let banMergeBanch = readConfig(`catchProject`)[this.remoteInfo.repoName]
         let mergeStrategy = ''
         let waitBranchList = []
         // 当配置了禁止合并的分支然后还有其他合并的时候需要进行警告
@@ -82,7 +82,6 @@ class GitPush extends GitCommand {
                 isOriginBranch: isOriginBranch,
                 pushOrigin: pushOrigin
             })
-
         })
         return waitBranchList
     }
@@ -90,9 +89,14 @@ class GitPush extends GitCommand {
     async pushBranch() {
         // 暂存当前执行命令的分支
         this.originBranch = await this.icodeGitServer.getCurrentBranch()
-        await runWithSpinner(async () => {
-            this.remoteBranchList = await this.icodeGitServer.getRemoteBranchList(this.login, this.repoName)
-        }, '获取远程所有分支')
+        try {
+            await runWithSpinner(async () => {
+                this.remoteBranchList = await this.icodeGitServer.getRemoteBranchList(this.login, this.remoteInfo.repoName)
+            }, '获取远程所有分支')
+        } catch(e) {
+            icodeLog.error('', e.message)
+            process.exit()
+        }
         this.waitBranchList = await this.createWaitBranchList()
         this.localBranchList = await this.icodeGitServer.getLocalBranchList()
         if (this.options?.origin) {
@@ -111,7 +115,6 @@ class GitPush extends GitCommand {
     }
 
     async localMergeBranch() {
-
         if (!this.options?.yes) {
             let { hasConfirm } = await inquirer.prompt([
                 {
@@ -129,13 +132,11 @@ class GitPush extends GitCommand {
 
         for (let index = 0; index < this.waitBranchList.length; index++) {
             let branchName = this.waitBranchList[index].name
-
             icodeLog.info('', `${branchName}分支是否是受保护的分支: ${this.waitBranchList[index].protected}`)
             if (this.waitBranchList[index].protected && this.ownerType === 'org') {
                 icodeLog.error('', `${branchName} 分支是受保护的分支,停止切换分支等操作`)
                 continue
             }
-
             if (!this.waitBranchList[index].pushOrigin) {
                 icodeLog.info('', `${branchName}分支不进行提交远程`)
                 if (await this.icodeGitServer.gitClean()) {
@@ -156,7 +157,6 @@ class GitPush extends GitCommand {
                     continue
                 }
             }
-
             await this.processPush(this.waitBranchList[index], deviate)
         }
     }
@@ -253,7 +253,7 @@ class GitPush extends GitCommand {
                 // await this.checkPullRequest()
 
                 // 创建合并请求
-                let pullrequest = await this.icodeGitServer.createPullRequest(this.login, this.repoName, {
+                let pullrequest = await this.icodeGitServer.createPullRequest(this.login, this.remoteInfo.repoName, {
                     title,
                     body,
                     head: this.branchList[i],
@@ -279,23 +279,23 @@ class GitPush extends GitCommand {
 
                     if (assigneesNameList.includes(this.user.login)) {
                         icodeLog.verbose('', '审批人包含自己直接进行合并')
-                        await this.icodeGitServer.reviewPullRequest(this.login, this.repoName, pullrequest.number)
+                        await this.icodeGitServer.reviewPullRequest(this.login, this.remoteInfo.repoName, pullrequest.number)
                     }
 
                     if (testerNameList.includes(this.user.login)) {
                         icodeLog.verbose('', '测试人包含自己直接进行合并')
-                        await this.icodeGitServer.reviewTesterRequest(this.login, this.repoName, pullrequest.number)
+                        await this.icodeGitServer.reviewTesterRequest(this.login, this.remoteInfo.repoName, pullrequest.number)
                     }
 
                     if (assigneesNameList.includes(this.user.login)) {
                         icodeLog.verbose('', '审批人包含自己直接进行合并')
-                        await this.icodeGitServer.agreePullRequest(this.login, this.repoName, pullrequest.number)
+                        await this.icodeGitServer.agreePullRequest(this.login, this.remoteInfo.repoName, pullrequest.number)
                     }
 
                 } else {
                     if (pullrequest.assignee.username === this.user.username) {
                         await runWithSpinner(async () => {
-                            await this.icodeGitServer.agreePullRequest(this.login, this.repoName, pullrequest.iid)
+                            await this.icodeGitServer.agreePullRequest(this.login, this.remoteInfo.repoName, pullrequest.iid)
                         }, '合并')
                     }
                 }
@@ -309,7 +309,7 @@ class GitPush extends GitCommand {
 
     // 检查是否有相同分支的pr 暂时不在前台进行调用 代码可用
     async checkPullRequest() {
-        let pullList = await this.icodeGitServer.getPullRequestList(this.login, this.repoName)
+        let pullList = await this.icodeGitServer.getPullRequestList(this.login, this.remoteInfo.repoName)
         // let haspull = null
         if (pullList.length !== 0) {
             haspull = pullList.filter(item => item.source_branch == this.originBranch)
@@ -323,7 +323,7 @@ class GitPush extends GitCommand {
     async getUserList() {
         let userList = null
         await runWithSpinner(async () => {
-            userList = await this.icodeGitServer.getCollaborators(this.login, this.repoName, this.ownerType)
+            userList = await this.icodeGitServer.getCollaborators(this.login, this.remoteInfo.repoName, this.ownerType)
         }, '获取协作用户')
         return userList
     }

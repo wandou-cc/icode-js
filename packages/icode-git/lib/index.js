@@ -178,15 +178,11 @@ class icodeGit {
 
     // 获取远程所有分支
     async getRemoteBranchList(login, name) {
-        // this.remoteList = await this.git.listRemote(['--refs'])
-        // let reg = /.+?refs\/heads\/(.*)/
-        // return this.remoteList.split('\n').map(item => {
-        //     const match = reg.exec(item)
-        //     if (match) {
-        //         return match[1]
-        //     }
-        // }).filter(_ => _)
-        return await this.gitInstance.getRepoteBranchList(login, name)
+        try {
+            return await this.gitInstance.getRepoteBranchList(login, name)
+        } catch (e) {
+            throw new Error(e)
+        }
     }
 
     // 拉取分支

@@ -22,6 +22,7 @@ class GitCommand {
         this.mainBranch = 'master'
         this.isNewRepo = false
         this.remoteInfo = null
+        this.sshHost = null
     }
 
     async init() {
@@ -45,9 +46,15 @@ class GitCommand {
                     let companyInfo = companyConfig.filter(item => item.name === this.currentServerName)[0]
                     process.env.ICODE_BASRURL = companyInfo.baseUrl + '/api/v4'
                     process.env.ICODE_REMOEURL = companyInfo.remoteUrl
+                    const regex = /https?:\/\/([^\/]+)/
+                    const match = companyInfo.baseUrl.match(regex)
+                    this.sshHost = match ? match[1] : ''
+                } else {
+                    this.sshHost = `${this.currentServerName}.com`
                 }
             })
 
+            // 检查ssh或者httpss是否可以使用
             chain = chain.then(async () => {
                 process.env.GIT_SSH_COMMAND = 'ssh -o StrictHostKeyChecking=no'
                 icodeLog.info('', '检查当前项目关联地址SSH或HTTPS是否可用,如果卡死请直接强制关闭,并检查网络')
@@ -57,8 +64,6 @@ class GitCommand {
                     icodeLog.error('', e.message)
                 }
             })
-
-
             // 检查是否有token
             chain = chain.then(async () => {
                 icodeLog.verbose('', '检查TOKEN')
@@ -150,7 +155,9 @@ class GitCommand {
     async createSSH(sshName, keyType, comment) {
         return new Promise(async (resolve, reject) => {
             const { spawn } = require('child_process')
-            const homeDir = os.homedir()
+            // const homeDir = os.homedir()
+            const homeDir = require('user-home')
+            console.log(homeDir)
 
             const directoryPath = path.join(homeDir, '.ssh')
             if (!fs.existsSync(directoryPath)) {
@@ -175,18 +182,19 @@ class GitCommand {
                         sshKeyGen.stdin.write(`${answer}\n`)
                     })
                 })
-
                 sshKeyGen.stderr.on('data', (error) => {
                     reject(error)
                 })
-
                 sshKeyGen.on('close', async (code) => {
                     if (code === 0) {
-                        // let nameString = `${sshName}.pub`
-                        icodeLog.info('', `SSH 密钥生成成功, 路径: ${colors.cyan(directoryPath)}, 请将对应公钥复制并添加到平台对应处!`)
-                        // icodeLog.info('', `如果您有多个平台, 请配置config, 教程可以看${terminalLink('README.md', colors.cyan('https://www.npmjs.com/package/@icode-js/icode'), {
-                        //     fallback: (text, url) => `- ${text}: ${url}`
-                        // })}`)
+                        icodeLog.info('', `SSH 密钥生成成功, 路径: ${colors.cyan(directoryPath)}`)
+
+
+
+
+
+
+                        
                         this.createSSHConfig(directoryPath, sshDir, comment)
                         resolve()
                     } else {
@@ -204,8 +212,8 @@ class GitCommand {
     createSSHConfig(directoryPath, sshDir, comment) {
         const configFile = path.join(directoryPath, 'config')
         const configContent = `
-Host ${this.currentServerName}.com
-HostName ${this.currentServerName}.com
+Host ${this.sshHost}
+HostName ${this.sshHost}
 User ${comment}
 IdentityFile ${sshDir}
 PreferredAuthentications publickey`

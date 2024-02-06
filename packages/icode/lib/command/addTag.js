@@ -23,7 +23,7 @@ class GitTag extends GitCommand {
             return
         }
         let config = readConfig('catchProject')
-        let currentProject = config[this.repoName]
+        let currentProject = config[this.remoteInfo.repoName]
         if (!currentProject?.tagType) {
             icodeLog.info('', '第一次使用需要配置tag模式')
             let tagTypeList = [
@@ -39,7 +39,7 @@ class GitTag extends GitCommand {
                 choices: tagTypeList,
                 default: 1
             })
-            config[this.repoName]['tagType'] = tagType
+            config[this.remoteInfo.repoName]['tagType'] = tagType
             writeConfig('catchProject', config)
         }
         this.tagType = currentProject?.tagType
@@ -53,7 +53,7 @@ class GitTag extends GitCommand {
         // 获取上tag
         let lastTag = null
         await runWithSpinner(async () => {
-            lastTag = await this.icodeGitServer.getRepoTag(this.login, this.repoName)
+            lastTag = await this.icodeGitServer.getRepoTag(this.login, this.remoteInfo.repoName)
         }, '获取tag')
         
         let version = '01'
@@ -88,7 +88,7 @@ class GitTag extends GitCommand {
         let addTag = null
 
         await runWithSpinner(async () => {
-            addTag = await this.icodeGitServer.addRepoTag(this.login, this.repoName, resultTag, message, this.mainBranch)
+            addTag = await this.icodeGitServer.addRepoTag(this.login, this.remoteInfo.repoName, resultTag, message, this.mainBranch)
         }, '提交tag')
         
         if (addTag.name) {

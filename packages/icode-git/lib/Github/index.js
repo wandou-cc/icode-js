@@ -75,10 +75,11 @@ class Github {
     }
     getRepoteBranchList(login, name) {
         return this.request.get(`/repos/${login}/${name}/branches`).then(res => {
-            if(res && res.statusText) {
+            if(res && res.statusText && res.status !== 404) {
                 throw new Error(res.statusText)
             }
-            return res
+            if(res.status == 404) return []
+            else return res
         })
     }
 

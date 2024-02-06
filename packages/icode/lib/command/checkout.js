@@ -28,7 +28,7 @@ class GitCheckout extends GitCommand {
             '--allow-unrelated-histories': true
         }
         await runWithSpinner(async () => {
-            this.remoteBranchList = await this.icodeGitServer.getRemoteBranchList(this.login, this.repoName)
+            this.remoteBranchList = await this.icodeGitServer.getRemoteBranchList(this.login, this.remoteInfo.repoName)
         }, '获取远程所有分支')
         try {
             let hasRemoteCurrentBranch = this.remoteBranchList.filter(item => item.name === this.branch).length !== 0
