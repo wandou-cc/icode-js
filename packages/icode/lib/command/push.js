@@ -395,7 +395,7 @@ class GitPush extends GitCommand {
             if (!branch.isOriginBranch) {
                 await runWithSpinner(async () => {
                     await this.icodeGitServer.mergeLocalBranch(this.originBranch, this.currentBranch)
-                }, `把 ${this.originBranch} 合并到 ${this.currentBranch}`)
+                }, `把 ${this.originBranch} 合并到 ${this.currentBranch} `)
                 icodeLog.verbose('', `把 ${this.originBranch} 合并到 ${this.currentBranch} 成功！`)
                 await this.checkConflicted()
             }
