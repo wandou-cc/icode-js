@@ -155,10 +155,7 @@ class GitCommand {
     async createSSH(sshName, keyType, comment) {
         return new Promise(async (resolve, reject) => {
             const { spawn } = require('child_process')
-            // const homeDir = os.homedir()
             const homeDir = require('user-home')
-            console.log(homeDir)
-
             const directoryPath = path.join(homeDir, '.ssh')
             if (!fs.existsSync(directoryPath)) {
                 fs.mkdirSync(directoryPath, { recursive: true })
@@ -188,7 +185,6 @@ class GitCommand {
                 sshKeyGen.on('close', async (code) => {
                     if (code === 0) {
                         icodeLog.info('', `SSH 密钥生成成功, 路径: ${colors.cyan(directoryPath)}`)
-
                         // 读取文件
                         let publickey = fs.readFileSync(`${sshDir}.pub`, 'utf-8')
                         icodeLog.info('', `请将以下公钥复制到对应平台SSH处`)
@@ -337,18 +333,17 @@ PreferredAuthentications publickey`
             {
                 type: 'input',
                 name: 'baseUrl',
-                message: '请输入仓库主域名 https://XXXXX.XX',
+                message: '请输入仓库主域名 https://XXXXX.com',
                 default: '',
                 validate(value) {
-                    return !value.length ? new Error('仓库主域名不能为空') : true
-                    // const urlPattern = /^(?!https?:\/\/).*\.com$/
-                    // return !urlPattern.test(value) ? new Error('不需要输入http:// 或者 https:// 只需要输入[]部分,并以.com/.cn 结尾') : true
+                    const domainRegex = /^https:\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+                    return !domainRegex.test(value) ? new Error('请输入仓库域名https开头,并以com|net等结尾,不需要添加目录') : true
                 }
             },
             {
                 type: 'input',
                 name: 'remoteUrl',
-                message: '请输入仓库前缀地址 [ssh://git@XXXXX.com]/xxxxxxx.git',
+                message: '请输入仓库前缀地址 [ssh://git@XXXXX.com]/xxxxxxx.git,只需要输入根路径即可,即[]部分',
                 default: '',
                 validate(value) {
                     const urlPattern = /^(https?:\/\/|ssh|git)/
