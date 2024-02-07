@@ -113,3 +113,8 @@ User xxx
 IdentityFile ~/.ssh/xxx // 对应上文件
 PreferredAuthentications publickey
 ```
+
+## 问题
+
+1. 如果出现'检查当前项目关联地址SSH或HTTPS是否可用,如果卡死请直接强制关闭,并检查网络'可能是网络问题导致`git ls-remote`执行失败了卡死了 所以可以直接中断,切换网络重新尝试
+2. 如果出现提示输入密码但是始终不对的情况请直接回车三次进行下一步设置SSH
