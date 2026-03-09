@@ -4,6 +4,21 @@ import { getAiCommandOptions } from '../core/ai-config.js'
 import { logger } from '../core/logger.js'
 import { runPushWorkflow } from '../workflows/push-workflow.js'
 
+function formatBranchStatus(status) {
+  const map = {
+    pushed: '已推送',
+    'merged-and-pushed': '已合并并推送',
+    'remote-merged': '已远程合并',
+    'skipped-protected': '已跳过(受保护)',
+    'skipped-missing-remote': '已跳过(远程分支不存在)',
+    'remote-merge-rejected': '远程合并被拒绝',
+    'remote-merge-denied': '远程合并无权限',
+    'remote-merge-failed': '远程合并失败'
+  }
+
+  return map[status] || status
+}
+
 function printHelp() {
   process.stdout.write(`
 Usage:
@@ -101,6 +116,8 @@ export async function runPushCommand(rawArgs) {
     return
   }
 
-  const summaryText = result.summary.map((item) => `${item.branch}:${item.status}`).join(', ')
-  logger.success(`push 完成: ${summaryText}`)
+  result.summary.forEach((item) => {
+    logger.info(`[结果] ${item.branch}: ${formatBranchStatus(item.status)}`)
+  })
+  logger.success(`push 完成，共处理 ${result.summary.length} 个分支。`)
 }

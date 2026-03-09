@@ -25,6 +25,14 @@ function classifyRemoteMergeFailure(error) {
   return 'remote-merge-failed'
 }
 
+function formatAiCommitResult(result) {
+  const header = result.commitMessage?.split('\n')[0] || '无标题'
+  if (result.commitId) {
+    return `${result.commitId} ${header}`
+  }
+  return header
+}
+
 async function prepareAiCommitIfEnabled(inputOptions) {
   if (!inputOptions.aiCommit) {
     return {
@@ -56,10 +64,11 @@ async function prepareAiCommitIfEnabled(inputOptions) {
       }
     }
 
-    logger.success(`AI 自动提交完成: ${result.commitMessage.split('\n')[0]}`)
+    logger.success(`AI 自动提交完成: ${formatAiCommitResult(result)}`)
     return {
       enabled: true,
       applied: true,
+      commitId: result.commitId,
       commitMessage: result.commitMessage
     }
   } catch (error) {
@@ -107,15 +116,18 @@ async function prepareCommitIfNeeded(git, options) {
 async function checkoutTargetBranch(git, targetBranch, sourceBranch) {
   const localExists = await git.branchExistsLocal(targetBranch)
   const remoteExists = await git.branchExistsRemote(targetBranch)
+  let checkoutMode = 'local'
 
   if (localExists) {
     await git.checkout(targetBranch)
   } else if (remoteExists) {
     await git.checkoutTracking(targetBranch)
+    checkoutMode = 'tracking'
   } else {
     // 目标分支不存在时，默认从 source 分支切出，方便“临时发布分支”场景。
     logger.warn(`目标分支 ${targetBranch} 不存在，将从 ${sourceBranch} 创建。`)
     await git.checkoutNewBranch(targetBranch, sourceBranch)
+    checkoutMode = 'created'
   }
 
   if (remoteExists) {
@@ -126,7 +138,8 @@ async function checkoutTargetBranch(git, targetBranch, sourceBranch) {
   }
 
   return {
-    remoteExists
+    remoteExists,
+    checkoutMode
   }
 }
 
@@ -143,18 +156,23 @@ async function runRemoteMergeMode({
     logger.warn('远程合并模式下 --not-push-current 不生效，当前分支会先推送到远程。')
   }
 
+  logger.info(`远程合并模式: source=${currentBranch}, targets=${branchTargets.join(', ')}`)
+
   const currentRemoteExists = await git.branchExistsRemote(currentBranch)
   if (currentRemoteExists) {
+    logger.info(`同步远程分支: ${currentBranch}`)
     await git.pull(currentBranch, {
       allowUnrelatedHistories: true,
       noRebase: true
     })
   }
 
+  logger.info(`推送源分支到远程: ${currentBranch}`)
   await git.push(currentBranch, {
     setUpstream: !currentRemoteExists,
     noVerify: inputOptions.noVerify
   })
+  logger.success(`源分支推送成功: ${currentBranch}`)
   summary.push({ branch: currentBranch, status: 'pushed' })
 
   for (const targetBranch of branchTargets) {
@@ -176,10 +194,12 @@ async function runRemoteMergeMode({
     }
 
     try {
+      logger.info(`远程合并开始: ${currentBranch} -> ${targetBranch}`)
       // 远程合并策略: 直接推送 refspec source:target，避免本地切分支和本地 merge。
       await git.pushRefspec(currentBranch, targetBranch, {
         noVerify: inputOptions.noVerify
       })
+      logger.success(`远程合并成功: ${currentBranch} -> ${targetBranch}`)
       summary.push({ branch: targetBranch, status: 'remote-merged' })
     } catch (error) {
       const status = classifyRemoteMergeFailure(error)
@@ -225,7 +245,10 @@ export async function runPushWorkflow(inputOptions) {
     }
   }
 
-  await prepareCommitIfNeeded(git, inputOptions)
+  const shouldRunManualCommit = !aiCommitResult.applied && aiCommitResult.reason !== 'no-diff'
+  if (shouldRunManualCommit) {
+    await prepareCommitIfNeeded(git, inputOptions)
+  }
   await git.fetch()
 
   if (inputOptions.pullMain && context.defaultBranch !== currentBranch) {
@@ -335,34 +358,43 @@ export async function runPushWorkflow(inputOptions) {
       if (targetBranch === currentBranch) {
         const remoteExists = await git.branchExistsRemote(targetBranch)
         if (remoteExists) {
+          logger.info(`同步远程分支: ${targetBranch}`)
           await git.pull(targetBranch, {
             allowUnrelatedHistories: true,
             noRebase: true
           })
         }
 
+        logger.info(`推送当前分支: ${targetBranch}`)
         await git.push(targetBranch, {
           setUpstream: !remoteExists,
           noVerify: inputOptions.noVerify
         })
 
+        logger.success(`推送成功: ${targetBranch}`)
         summary.push({ branch: targetBranch, status: 'pushed' })
         continue
       }
 
-      const { remoteExists } = await checkoutTargetBranch(git, targetBranch, currentBranch)
+      logger.info(`切换到目标分支: ${targetBranch}`)
+      const { remoteExists, checkoutMode } = await checkoutTargetBranch(git, targetBranch, currentBranch)
+      logger.info(`目标分支准备完成: ${targetBranch} (${checkoutMode})`)
 
       // 保留 merge commit，方便后续追溯“从哪个分支合并过来”。
+      logger.info(`合并分支: ${currentBranch} -> ${targetBranch}`)
       await git.merge(currentBranch, {
         noFf: true,
         noEdit: true
       })
+      logger.success(`合并成功: ${currentBranch} -> ${targetBranch}`)
 
+      logger.info(`推送目标分支: ${targetBranch}`)
       await git.push(targetBranch, {
         setUpstream: !remoteExists,
         noVerify: inputOptions.noVerify
       })
 
+      logger.success(`目标分支推送成功: ${targetBranch}`)
       summary.push({ branch: targetBranch, status: 'merged-and-pushed' })
     }
   } finally {

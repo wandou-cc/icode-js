@@ -105,8 +105,14 @@ export async function runAiCommitWorkflow(options) {
     noVerify: options.noVerify
   })
 
+  const commitId = await git.revParseShort('HEAD')
+  if (commitId) {
+    logger.success(`AI commit 已创建: ${commitId}`)
+  }
+
   return {
     applied: true,
+    commitId,
     commitMessage,
     raw: text
   }

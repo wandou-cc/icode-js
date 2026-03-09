@@ -8,7 +8,7 @@ Configure Ollama and command defaults once:
 <icode> config ai set ollama-local \
   --format ollama \
   --base-url http://127.0.0.1:11434 \
-  --model qwen2.5:7b \
+  --model glm-5:cloud \
   --activate
 
 <icode> config ai options set commit --json '{"profile":"ollama-local","lang":"zh","yes":true}'
@@ -20,7 +20,7 @@ Run direct commands after setup:
 
 ```bash
 <icode> ai codereview
-<icode> push --ai-commit -y
+<icode> push release test --ai-commit -y -o --ai-review
 ```
 
 ## 2) Submit Current Branch and Merge into Release/Test
@@ -28,7 +28,7 @@ Run direct commands after setup:
 Prefer remote merge mode when team process requires server-side merge:
 
 ```bash
-<icode> push release test -m "feat: batch publish" -y -o
+<icode> push release test --ai-commit -y -o --ai-review
 ```
 
 Use local merge mode when local branch switching/merge is acceptable:
@@ -77,4 +77,13 @@ When user wants to forbid inherited parent Git repository execution:
 
 ```bash
 <icode> info --repo-mode strict
+```
+
+## 6) Fix "AI profile 不存在"
+
+```bash
+<icode> config ai list
+<icode> config ai set ollama --format ollama --base-url http://127.0.0.1:11434 --model glm-5:cloud --activate
+<icode> config ai test ollama
+<icode> push release test --ai-commit -o -y --ai-review --ai-profile ollama
 ```

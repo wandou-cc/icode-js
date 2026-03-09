@@ -34,7 +34,7 @@ Map user intent to the exact command class:
 
 - Commit/push current branch: `<icode> push -m "<msg>" [-y]`
 - AI 自动提交后再推送: `<icode> push --ai-commit [-y]`
-- Push and merge into multiple targets: `<icode> push release test -m "<msg>" -y [-o]`
+- AI 自动提交并远程合并多个目标分支: `<icode> push release test --ai-commit -y -o [--ai-review]`
 - AI commit message generation: `<icode> ai commit [--apply] [--profile <name>]`
 - AI code review: `<icode> ai codereview [--base ... --head ... --profile ...]`
 - Branch migration/cherry-pick: `<icode> migrate <source> <target> [--range ...] [--push]`
@@ -55,6 +55,26 @@ When users ask to “默认带参数” or “减少重复输入”:
 3. Keep CLI arguments higher priority than saved options.
 
 Load [references/playbooks.md](references/playbooks.md) for copy-ready setup snippets.
+
+## Observe Progress Output
+
+Use runtime output to explain state clearly:
+
+1. Wait spinner appears during AI HTTP calls.
+2. AI commit prints generated commit title and commit id.
+3. Push merge flow prints step logs: sync/push/merge/remote-merge.
+4. Final push result prints per-branch status line.
+
+If users dislike spinner animation, suggest `ICODE_NO_SPINNER=1`.
+
+## Troubleshoot Quickly
+
+Handle common issues with direct actions:
+
+1. `AI profile 不存在`: run `<icode> config ai list`; then `config ai set/use`.
+2. `AI profile xxx 缺少 apiKey`: set `--api-key` for OpenAI/Anthropic; Ollama local usually no key needed.
+3. Merge rejected (`remote-merge-rejected`): pull/rebase target branch and retry push.
+4. Protected branch skipped: confirm and rerun with `--force-protected` only when approved.
 
 ## Safety Rules
 

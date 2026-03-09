@@ -25,6 +25,11 @@ export class GitService {
     return cleanOutput(result.stdout)
   }
 
+  async revParseShort(ref = 'HEAD') {
+    const result = await this.exec(['rev-parse', '--short', ref], { allowFailure: true })
+    return cleanOutput(result.stdout)
+  }
+
   async fetch() {
     await this.exec(['fetch', '--all', '--prune'])
   }

@@ -27,9 +27,11 @@ Use one of the following:
 - Push + merge to multiple branches:
   - Local merge mode: `<icode> push <target...> -m "<message>" -y`
   - Remote merge mode: `<icode> push <target...> -m "<message>" -y -o`
+  - Remote merge with AI commit: `<icode> push <target...> --ai-commit -y -o [--ai-review]`
 - Common push control flags:
   - `--not-push-current`
   - `--pull-main`
+  - `--ai-commit`
   - `--ai-review`
   - `--ai-profile <name>`
   - `--force-protected`
@@ -75,3 +77,10 @@ Use one of the following:
   - `<icode> config ai options show <commit|conflict|codereview|push>`
   - `<icode> config ai options set <scope> --json '<json>' [--replace]`
   - `<icode> config ai options remove <scope>`
+
+## Output Signals
+
+- AI request in progress: spinner line `[icode] -|/\\ 等待 AI(<profile>) 响应`
+- AI commit success: `AI 自动提交完成: <commitId> <commitTitle>`
+- Remote merge progress: `远程合并开始: <source> -> <target>`
+- Per-branch summary: `[结果] <branch>: <status>`

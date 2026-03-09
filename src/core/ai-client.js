@@ -1,5 +1,6 @@
 import { IcodeError } from './errors.js'
 import { getAiProfile } from './ai-config.js'
+import { withSpinner } from './loading.js'
 
 function trimSlash(value) {
   return value.replace(/\/+$/, '')
@@ -144,37 +145,41 @@ async function requestOpenAI(profile, prompt) {
     ...normalizeHeaders(profile.headers)
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: profile.model,
-      temperature: profile.temperature,
-      max_tokens: profile.maxTokens,
-      messages: [
-        {
-          role: 'system',
-          content: prompt.systemPrompt
-        },
-        {
-          role: 'user',
-          content: prompt.userPrompt
-        }
-      ]
+  const text = await withSpinner(`等待 AI(${profile.name}) 响应`, async () => {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: profile.model,
+        temperature: profile.temperature,
+        max_tokens: profile.maxTokens,
+        messages: [
+          {
+            role: 'system',
+            content: prompt.systemPrompt
+          },
+          {
+            role: 'user',
+            content: prompt.userPrompt
+          }
+        ]
+      })
     })
-  })
 
-  const text = await response.text()
-  if (!response.ok) {
-    throw new IcodeError(`AI 请求失败(${response.status}): ${text}`, {
-      code: 'AI_HTTP_ERROR',
-      exitCode: 2,
-      meta: {
-        status: response.status,
-        endpoint
-      }
-    })
-  }
+    const responseText = await response.text()
+    if (!response.ok) {
+      throw new IcodeError(`AI 请求失败(${response.status}): ${responseText}`, {
+        code: 'AI_HTTP_ERROR',
+        exitCode: 2,
+        meta: {
+          status: response.status,
+          endpoint
+        }
+      })
+    }
+
+    return responseText
+  })
 
   const payload = JSON.parse(text)
   return parseOpenAIContent(payload)
@@ -200,34 +205,38 @@ async function requestAnthropic(profile, prompt) {
     ...customHeaders
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: profile.model,
-      system: prompt.systemPrompt,
-      max_tokens: profile.maxTokens,
-      temperature: profile.temperature,
-      messages: [
-        {
-          role: 'user',
-          content: prompt.userPrompt
-        }
-      ]
+  const text = await withSpinner(`等待 AI(${profile.name}) 响应`, async () => {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: profile.model,
+        system: prompt.systemPrompt,
+        max_tokens: profile.maxTokens,
+        temperature: profile.temperature,
+        messages: [
+          {
+            role: 'user',
+            content: prompt.userPrompt
+          }
+        ]
+      })
     })
-  })
 
-  const text = await response.text()
-  if (!response.ok) {
-    throw new IcodeError(`AI 请求失败(${response.status}): ${text}`, {
-      code: 'AI_HTTP_ERROR',
-      exitCode: 2,
-      meta: {
-        status: response.status,
-        endpoint
-      }
-    })
-  }
+    const responseText = await response.text()
+    if (!response.ok) {
+      throw new IcodeError(`AI 请求失败(${response.status}): ${responseText}`, {
+        code: 'AI_HTTP_ERROR',
+        exitCode: 2,
+        meta: {
+          status: response.status,
+          endpoint
+        }
+      })
+    }
+
+    return responseText
+  })
 
   const payload = JSON.parse(text)
   return parseAnthropicContent(payload)
@@ -247,40 +256,44 @@ async function requestOllama(profile, prompt) {
     headers.Authorization = `Bearer ${apiKey}`
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: profile.model,
-      stream: false,
-      messages: [
-        {
-          role: 'system',
-          content: prompt.systemPrompt
-        },
-        {
-          role: 'user',
-          content: prompt.userPrompt
+  const text = await withSpinner(`等待 AI(${profile.name}) 响应`, async () => {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: profile.model,
+        stream: false,
+        messages: [
+          {
+            role: 'system',
+            content: prompt.systemPrompt
+          },
+          {
+            role: 'user',
+            content: prompt.userPrompt
+          }
+        ],
+        options: {
+          temperature: profile.temperature,
+          num_predict: profile.maxTokens
         }
-      ],
-      options: {
-        temperature: profile.temperature,
-        num_predict: profile.maxTokens
-      }
+      })
     })
-  })
 
-  const text = await response.text()
-  if (!response.ok) {
-    throw new IcodeError(`AI 请求失败(${response.status}): ${text}`, {
-      code: 'AI_HTTP_ERROR',
-      exitCode: 2,
-      meta: {
-        status: response.status,
-        endpoint
-      }
-    })
-  }
+    const responseText = await response.text()
+    if (!response.ok) {
+      throw new IcodeError(`AI 请求失败(${response.status}): ${responseText}`, {
+        code: 'AI_HTTP_ERROR',
+        exitCode: 2,
+        meta: {
+          status: response.status,
+          endpoint
+        }
+      })
+    }
+
+    return responseText
+  })
 
   const payload = JSON.parse(text)
   return parseOllamaContent(payload)
