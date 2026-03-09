@@ -1,0 +1,80 @@
+# Playbooks
+
+## 1) Initialize Local AI Submit Defaults
+
+Configure Ollama and command defaults once:
+
+```bash
+<icode> config ai set ollama-local \
+  --format ollama \
+  --base-url http://127.0.0.1:11434 \
+  --model qwen2.5:7b \
+  --activate
+
+<icode> config ai options set commit --json '{"profile":"ollama-local","lang":"zh","yes":true}'
+<icode> config ai options set codereview --json '{"profile":"ollama-local","base":"origin/main"}'
+<icode> config ai options set push --json '{"aiCommit":true,"aiReview":true,"aiProfile":"ollama-local","yes":true}'
+```
+
+Run direct commands after setup:
+
+```bash
+<icode> ai codereview
+<icode> push --ai-commit -y
+```
+
+## 2) Submit Current Branch and Merge into Release/Test
+
+Prefer remote merge mode when team process requires server-side merge:
+
+```bash
+<icode> push release test -m "feat: batch publish" -y -o
+```
+
+Use local merge mode when local branch switching/merge is acceptable:
+
+```bash
+<icode> push release test -m "feat: batch publish" -y
+```
+
+## 3) Recover from Bad Commit
+
+Safe rollback (recommended default):
+
+```bash
+<icode> rollback HEAD~1 --mode revert -y
+```
+
+Hard reset (only with explicit user confirmation):
+
+```bash
+<icode> rollback HEAD~1 --mode hard -y
+```
+
+## 4) Migrate Feature Commits into Target Branch
+
+Migrate all incremental commits from source to target:
+
+```bash
+<icode> migrate feature/login release --push -y
+```
+
+Migrate a specific range:
+
+```bash
+<icode> migrate feature/login release --range HEAD~3..feature/login --push -y
+```
+
+## 5) Handle Hook and Parent-Repo Scenarios
+
+When hooks block commit/push and user explicitly chooses bypass:
+
+```bash
+<icode> push -m "chore: hotfix" --no-verify -y
+```
+
+When user wants to forbid inherited parent Git repository execution:
+
+```bash
+<icode> info --repo-mode strict
+```

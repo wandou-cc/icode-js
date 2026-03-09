@@ -1,0 +1,4 @@
+interface:
+  display_name: "Icode Git Workflow"
+  short_description: "Automate icode-js git workflow and AI-assisted submit flow"
+  default_prompt: "Use $icode-git-workflow to execute safe icode-js git workflows and summarize results clearly."
