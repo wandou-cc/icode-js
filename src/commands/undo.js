@@ -8,12 +8,15 @@ Usage:
   icode undo [options]
 
 Options:
-  --mode <mode>          revert | soft | mixed | hard
+  --mode <mode>          回滚模式: revert | soft | mixed | hard
   --ref <ref>            回滚目标，默认按 mode 自动给出
   --recover <action>     冲突恢复策略: continue | abort | keep
-  -y, --yes              自动确认
-  --repo-mode <mode>     仓库模式: auto | strict
+  -y, --yes              自动确认（跳过确认提示）
+  --repo-mode <mode>     仓库模式: auto(自动继承父仓库) | strict(禁止继承)
   -h, --help             查看帮助
+
+Notes:
+  revert 模式会生成新提交；reset 模式会移动 HEAD。
 
 Examples:
   icode undo

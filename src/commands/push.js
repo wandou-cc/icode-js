@@ -9,11 +9,13 @@ function formatBranchStatus(status) {
     pushed: '已推送',
     'merged-and-pushed': '已合并并推送',
     'remote-merged': '已远程合并',
+    'remote-rebased-and-pushed': '已 rebase 后推送',
     'skipped-protected': '已跳过(受保护)',
     'skipped-missing-remote': '已跳过(远程分支不存在)',
     'remote-merge-rejected': '远程合并被拒绝',
     'remote-merge-denied': '远程合并无权限',
-    'remote-merge-failed': '远程合并失败'
+    'remote-merge-failed': '远程合并失败',
+    'remote-rebase-conflicted': 'rebase 冲突，未推送'
   }
 
   return map[status] || status
@@ -24,31 +26,35 @@ function printHelp() {
 Usage:
   icode push [targetBranch...] [options]
 
+Arguments:
+  [targetBranch...]      目标分支列表（可多个，空则默认当前分支）
+
 Options:
-  -m, --message <msg>         提交信息
-  -y, --yes                   自动确认
-  -o, --origin                远程合并模式（source:target）
+  -m, --message <msg>         提交信息（未填会提示输入）
+  -y, --yes                   自动确认（跳过确认提示）
+  -o, --origin                显式使用远程 rebase 推送模式（默认）
+  --local-merge               使用本地 merge 模式（会切换分支并生成 merge commit）
   --ai-commit                 push 前自动执行 AI commit（生成并应用提交信息）
-  --ai-review                 提交前执行 AI 风险评审
-  --ai-profile <name>         指定 AI profile
+  --ai-profile <name>         指定 AI profile（用于 --ai-commit）
   --pull-main                 提交前将主分支同步到当前分支
   --not-push-current          不推送当前分支，只处理目标分支
   --force-protected           强制处理配置里的受保护分支
-  --repo-mode <mode>          仓库模式: auto | strict
+  --repo-mode <mode>          仓库模式: auto(自动继承父仓库) | strict(禁止继承)
   --no-verify                 跳过 hook/husky 校验
   -h, --help                  查看帮助
+
+Notes:
+  默认使用远程 rebase 推送模式；未指定 target 时默认处理当前分支。
+  布尔开关仅在命令行显式传入时生效（如 --ai-commit / --pull-main / --no-verify / -y）。
 `)
 }
 
-function resolveBooleanOption(cliValue, configValue, fallback = false) {
+function resolveBooleanOption(cliValue, fallback = false) {
   if (typeof cliValue === 'boolean') {
     return cliValue
   }
-  if (typeof configValue === 'boolean') {
-    return configValue
-  }
-  if (typeof configValue === 'string') {
-    const normalized = configValue.trim().toLowerCase()
+  if (typeof cliValue === 'string') {
+    const normalized = cliValue.trim().toLowerCase()
     if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
       return true
     }
@@ -69,6 +75,55 @@ function resolveStringOption(cliValue, configValue, fallback = '') {
   return fallback
 }
 
+function parseOptionalBoolean(value) {
+  if (typeof value === 'boolean') {
+    return value
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
+      return true
+    }
+    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) {
+      return false
+    }
+  }
+  return undefined
+}
+
+function resolveRemoteMergeMode(cliValues) {
+  const cliLocalMerge = parseOptionalBoolean(cliValues['local-merge'])
+  if (cliLocalMerge === true) {
+    return false
+  }
+
+  const cliOrigin = parseOptionalBoolean(cliValues.origin)
+  if (cliOrigin === true) {
+    return true
+  }
+
+  // 默认走远程 rebase 推送，避免本地 merge 带来的额外 merge commit。
+  return true
+}
+
+export function resolvePushWorkflowOptions(parsedValues, parsedPositionals, scopedOptions = {}) {
+  return {
+    targetBranches: parsedPositionals,
+    message: parsedValues.message,
+    // 显式传入开关才生效，避免配置项隐式开启 push 行为。
+    yes: resolveBooleanOption(parsedValues.yes, false),
+    remoteMerge: resolveRemoteMergeMode(parsedValues),
+    aiCommit: resolveBooleanOption(parsedValues['ai-commit'], false),
+    aiCommitLang: resolveStringOption(undefined, scopedOptions.aiCommitLang, 'zh'),
+    aiProfile: resolveStringOption(parsedValues['ai-profile'], scopedOptions.aiProfile, ''),
+    pullMain: resolveBooleanOption(parsedValues['pull-main'], false),
+    notPushCurrent: resolveBooleanOption(parsedValues['not-push-current'], false),
+    forceProtected: resolveBooleanOption(parsedValues['force-protected'], false),
+    repoMode: resolveStringOption(parsedValues['repo-mode'], undefined, 'auto'),
+    noVerify: resolveBooleanOption(parsedValues['no-verify'], false)
+  }
+}
+
 export async function runPushCommand(rawArgs) {
   const args = normalizeLegacyArgs(rawArgs)
   const scopedOptions = getAiCommandOptions('push')
@@ -79,8 +134,8 @@ export async function runPushCommand(rawArgs) {
       message: { type: 'string', short: 'm' },
       yes: { type: 'boolean', short: 'y' },
       origin: { type: 'boolean', short: 'o' },
+      'local-merge': { type: 'boolean' },
       'ai-commit': { type: 'boolean' },
-      'ai-review': { type: 'boolean' },
       'ai-profile': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
       'pull-main': { type: 'boolean' },
@@ -96,21 +151,7 @@ export async function runPushCommand(rawArgs) {
     return
   }
 
-  const result = await runPushWorkflow({
-    targetBranches: parsed.positionals,
-    message: parsed.values.message,
-    yes: resolveBooleanOption(parsed.values.yes, scopedOptions.yes, false),
-    remoteMerge: resolveBooleanOption(parsed.values.origin, scopedOptions.origin, false),
-    aiCommit: resolveBooleanOption(parsed.values['ai-commit'], scopedOptions.aiCommit, false),
-    aiCommitLang: resolveStringOption(undefined, scopedOptions.aiCommitLang, 'zh'),
-    aiReview: resolveBooleanOption(parsed.values['ai-review'], scopedOptions.aiReview, false),
-    aiProfile: resolveStringOption(parsed.values['ai-profile'], scopedOptions.aiProfile, ''),
-    pullMain: resolveBooleanOption(parsed.values['pull-main'], scopedOptions.pullMain, false),
-    notPushCurrent: resolveBooleanOption(parsed.values['not-push-current'], scopedOptions.notPushCurrent, false),
-    forceProtected: resolveBooleanOption(parsed.values['force-protected'], scopedOptions.forceProtected, false),
-    repoMode: resolveStringOption(parsed.values['repo-mode'], scopedOptions.repoMode, 'auto'),
-    noVerify: resolveBooleanOption(parsed.values['no-verify'], scopedOptions.noVerify, false)
-  })
+  const result = await runPushWorkflow(resolvePushWorkflowOptions(parsed.values, parsed.positionals, scopedOptions))
 
   if (result.canceled) {
     return

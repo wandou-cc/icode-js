@@ -8,8 +8,11 @@ Usage:
   icode info [options]
 
 Options:
-  --repo-mode <mode>     仓库模式: auto | strict
+  --repo-mode <mode>     仓库模式: auto(自动继承父仓库) | strict(禁止继承)
   -h, --help             查看帮助
+
+Notes:
+  输出包含当前仓库、分支、hook 与 AI 配置概览。
 `)
 }
 

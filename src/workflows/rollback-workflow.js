@@ -50,7 +50,7 @@ export async function runRollbackWorkflow(options) {
   }
 
   if (!['soft', 'mixed', 'hard'].includes(mode)) {
-    throw new IcodeError('rollback 模式仅支持: revert | soft | mixed | hard', {
+    throw new IcodeError('mode 仅支持: revert | soft | mixed | hard', {
       code: 'ROLLBACK_MODE_INVALID',
       exitCode: 2
     })

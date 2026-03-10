@@ -13,9 +13,29 @@ Options:
   --head <ref>            diff 终点，默认 HEAD
   --focus <text>          评审重点（安全/性能/测试等）
   --profile <name>        指定 AI profile
-  --repo-mode <mode>      仓库模式: auto | strict
+  --repo-mode <mode>      仓库模式: auto(自动继承父仓库) | strict(禁止继承)
+  --dump-response         输出 AI 原始响应（调试数据格式）
   -h, --help              查看帮助
 `)
+}
+
+function resolveBooleanOption(cliValue, configValue, fallback = false) {
+  if (typeof cliValue === 'boolean') {
+    return cliValue
+  }
+  if (typeof configValue === 'boolean') {
+    return configValue
+  }
+  if (typeof configValue === 'string') {
+    const normalized = configValue.trim().toLowerCase()
+    if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
+      return true
+    }
+    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) {
+      return false
+    }
+  }
+  return fallback
 }
 
 function resolveStringOption(cliValue, configValue, fallback = '') {
@@ -39,6 +59,7 @@ export async function runCodeReviewCommand(rawArgs) {
       focus: { type: 'string' },
       profile: { type: 'string' },
       'repo-mode': { type: 'string' },
+      'dump-response': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }
     }
   })
@@ -53,7 +74,8 @@ export async function runCodeReviewCommand(rawArgs) {
     headRef: resolveStringOption(parsed.values.head, scopedOptions.head, ''),
     focus: resolveStringOption(parsed.values.focus, scopedOptions.focus, ''),
     profile: resolveStringOption(parsed.values.profile, scopedOptions.profile, ''),
-    repoMode: resolveStringOption(parsed.values['repo-mode'], scopedOptions.repoMode, 'auto')
+    repoMode: resolveStringOption(parsed.values['repo-mode'], scopedOptions.repoMode, 'auto'),
+    dumpResponse: resolveBooleanOption(parsed.values['dump-response'], scopedOptions.dumpResponse, false)
   })
 
   logger.info(`Code Review 范围: ${result.rangeSpec}`)

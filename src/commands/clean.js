@@ -12,9 +12,12 @@ Options:
   --keep <branch|csv>        额外保留分支，可重复使用或逗号分隔
   --remote                   同时删除远程分支
   --force                    强制删除本地分支（-D）
-  -y, --yes                  自动确认
-  --repo-mode <mode>         仓库模式: auto | strict
+  -y, --yes                  自动确认（跳过确认提示）
+  --repo-mode <mode>         仓库模式: auto(自动继承父仓库) | strict(禁止继承)
   -h, --help                 查看帮助
+
+Notes:
+  默认保护当前分支/主分支/受保护分支。
 
 Examples:
   icode clean

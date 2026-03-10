@@ -31,15 +31,22 @@ function printHelp() {
 Usage:
   icode config <command> [...args]
 
+Arguments:
+  <command>                子命令（list/get/set/delete/ai/protect）
+
 Commands:
-  list
-  get <path>
-  set <path> <value>
-  delete <path>
-  ai <subcommand> [...]
-  protect list
-  protect add <branch...>
-  protect remove <branch...>
+  list                    查看全部配置
+  get <path>              读取指定配置项
+  set <path> <value>      写入配置项
+  delete <path>           删除配置项
+  ai <subcommand> [...]   AI profile 配置
+  protect list            查看受保护分支
+  protect add <branch...> 添加受保护分支
+  protect remove <branch...> 移除受保护分支
+
+Options:
+  --repo-mode <mode>      仓库模式: auto(自动继承父仓库) | strict(禁止继承)，仅影响 protect
+  -h, --help              查看帮助
 
 Examples:
   icode config set defaults.repoMode strict
@@ -55,28 +62,48 @@ function printAiHelp() {
 Usage:
   icode config ai <subcommand> [options]
 
+Arguments:
+  <subcommand>             子命令（list/show/set/options/use/remove/test）
+
 Subcommands:
-  list
-  show [profile]
-  set <profile> --format <openai|anthropic|ollama> --base-url <url> --api-key <key> --model <name> [--headers <json>] [--activate]
-  options <list|show|set|remove> [...]
-  use <profile>
-  remove <profile>
-  test [profile]
+  list                                  查看所有 AI profiles
+  show [profile]                        查看 profile 详情（默认当前激活）
+  set <profile> --format <openai|anthropic|ollama> --base-url <url> --api-key <key> --model <name> [--headers <json>] [--request-body <json>] [--activate]
+                                        创建/更新 profile
+  options <list|show|set|remove> [...]   设置命令默认 options
+  use <profile>                          切换默认 profile
+  remove <profile>                       删除 profile
+  test [profile]                         测试连通性（默认当前激活）
+
+Options (set):
+  --format <openai|anthropic|ollama>     接口格式（必填）
+  --base-url <url>                       API 地址
+  --api-key <key>                        API Key
+  --model <name>                         模型名称
+  --provider <name>                      自定义提供方标识（可选）
+  --temperature <num>                    采样温度（可选）
+  --max-tokens <num>                     最大输出 tokens（可选）
+  --headers <json>                       额外请求头 JSON
+  --request-body <json>                  额外请求体 JSON
+  --activate                             设置为默认 profile
+
+Common options:
+  -h, --help                             查看帮助
 
 Examples:
   icode config ai list
   icode config ai show
   icode config ai set claude --format anthropic --base-url https://api.anthropic.com/v1 --api-key xxx --model claude-3-5-sonnet-20241022 --activate
+  icode config ai set zhipu --format openai --base-url https://open.bigmodel.cn/api/paas/v4 --api-key xxx --model glm-5 --request-body '{"thinking":{"type":"disabled"},"stream":false}' --activate
   icode config ai options set commit --json '{"profile":"local","lang":"zh","yes":true}'
-  icode config ai options set push --json '{"aiCommit":true,"aiReview":true,"aiProfile":"local","yes":true}'
+  icode config ai options set push --json '{"aiProfile":"local","aiCommitLang":"zh"}'
   icode config ai set ollama --format ollama --base-url http://127.0.0.1:11434 --model qwen2.5:7b --activate
   icode config ai use claude
   icode config ai test claude
 `)
 }
 
-function parseJsonObject(rawValue) {
+function parseJsonObject(rawValue, fieldLabel = 'headers') {
   if (!rawValue) {
     return {}
   }
@@ -84,11 +111,11 @@ function parseJsonObject(rawValue) {
   try {
     const parsed = JSON.parse(rawValue)
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('headers 必须是 JSON 对象')
+      throw new Error(`${fieldLabel} 必须是 JSON 对象`)
     }
     return parsed
   } catch (error) {
-    throw new IcodeError(`headers 解析失败: ${error.message}`, {
+    throw new IcodeError(`${fieldLabel} 解析失败: ${error.message}`, {
       code: 'CONFIG_AI_HEADERS_INVALID',
       exitCode: 2
     })
@@ -121,11 +148,22 @@ function printAiOptionsHelp() {
 Usage:
   icode config ai options <command> [options]
 
+Arguments:
+  <command>                子命令（list/show/set/remove）
+
 Commands:
-  list
-  show <scope>
+  list                      列出所有 scope 的默认 options
+  show <scope>              查看指定 scope 的默认 options
   set <scope> --json <json> [--replace]
-  remove <scope>
+                            写入 scope 默认 options
+  remove <scope>            删除 scope 默认 options
+
+Options (set):
+  --json <json>             JSON 对象字符串
+  --replace                 覆盖写入（默认合并）
+
+Common options:
+  -h, --help                查看帮助
 
 Available scope:
   commit | conflict | codereview | push
@@ -135,7 +173,8 @@ Examples:
   icode config ai options show commit
   icode config ai options set commit --json '{"profile":"local","lang":"zh","yes":true}'
   icode config ai options set codereview --json '{"profile":"local","base":"origin/main"}'
-  icode config ai options set push --json '{"aiCommit":true,"aiReview":true,"aiProfile":"local","yes":true}'
+  icode config ai options set codereview --json '{"profile":"ollama","dumpResponse":true}'
+  icode config ai options set push --json '{"aiProfile":"local","aiCommitLang":"zh"}'
   icode config ai options remove push
 `)
 }
@@ -251,6 +290,7 @@ async function runAiConfigCommand(args) {
         temperature: { type: 'string' },
         'max-tokens': { type: 'string' },
         headers: { type: 'string' },
+        'request-body': { type: 'string' },
         activate: { type: 'boolean', default: false }
       }
     })
@@ -271,7 +311,8 @@ async function runAiConfigCommand(args) {
       model: parsed.values.model,
       temperature: parsed.values.temperature,
       maxTokens: parsed.values['max-tokens'],
-      headers: parsed.values.headers ? parseJsonObject(parsed.values.headers) : undefined
+      headers: parsed.values.headers ? parseJsonObject(parsed.values.headers, 'headers') : undefined,
+      requestBody: parsed.values['request-body'] ? parseJsonObject(parsed.values['request-body'], 'request-body') : undefined
     }))
 
     if (parsed.values.activate) {

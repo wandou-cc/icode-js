@@ -5,14 +5,17 @@ import { resolveGitContext } from '../core/git-context.js'
 import { logger } from '../core/logger.js'
 import { confirm, input } from '../core/prompts.js'
 import { runAiCommitWorkflow } from './ai-commit-workflow.js'
-import { runAiRiskReviewWorkflow } from './ai-risk-review-workflow.js'
 
 function uniqueBranches(branches) {
   return [...new Set(branches.map((item) => item.trim()).filter(Boolean))]
 }
 
+function readCommandErrorOutput(error) {
+  return `${error?.meta?.stderr || ''}\n${error?.meta?.stdout || ''}\n${error?.message || ''}`
+}
+
 function classifyRemoteMergeFailure(error) {
-  const output = `${error?.meta?.stderr || ''}\n${error?.meta?.stdout || ''}\n${error?.message || ''}`
+  const output = readCommandErrorOutput(error)
 
   if (/non-fast-forward|fetch first|rejected/i.test(output)) {
     return 'remote-merge-rejected'
@@ -23,6 +26,25 @@ function classifyRemoteMergeFailure(error) {
   }
 
   return 'remote-merge-failed'
+}
+
+function classifyRemoteRebaseFailure(error) {
+  const output = readCommandErrorOutput(error)
+
+  if (/CONFLICT \(|could not apply|resolve all conflicts|fix conflicts/i.test(output)) {
+    return 'remote-rebase-conflicted'
+  }
+
+  return classifyRemoteMergeFailure(error)
+}
+
+function sanitizeBranchName(branchName) {
+  const sanitized = branchName.trim().replace(/[^0-9A-Za-z._-]+/g, '-').replace(/^-+|-+$/g, '')
+  return sanitized || 'branch'
+}
+
+function buildTemporaryRebaseBranchName(sourceBranch, targetBranch) {
+  return `icode-tmp-rebase-${sanitizeBranchName(sourceBranch)}-to-${sanitizeBranchName(targetBranch)}-${Date.now()}`
 }
 
 function formatAiCommitResult(result) {
@@ -143,6 +165,72 @@ async function checkoutTargetBranch(git, targetBranch, sourceBranch) {
   }
 }
 
+async function cleanupTemporaryRebaseBranch(git, tempBranch, originalBranch) {
+  const branchAfterAttempt = await git.getCurrentBranch()
+
+  if (branchAfterAttempt === tempBranch) {
+    try {
+      await git.checkout(originalBranch)
+    } catch (error) {
+      logger.warn(`未能自动切回原分支 ${originalBranch}: ${error.message}`)
+      return
+    }
+  }
+
+  if (await git.branchExistsLocal(tempBranch)) {
+    try {
+      await git.deleteLocalBranch(tempBranch, { force: true })
+    } catch (error) {
+      logger.warn(`未能自动清理临时分支 ${tempBranch}: ${error.message}`)
+    }
+  }
+}
+
+async function pushTargetByRebaseFallback({
+  git,
+  currentBranch,
+  targetBranch,
+  inputOptions
+}) {
+  const tempBranch = buildTemporaryRebaseBranchName(currentBranch, targetBranch)
+
+  try {
+    logger.info(`检测到 non-fast-forward，先 fetch 再临时 rebase: origin/${targetBranch}`)
+    await git.fetch()
+
+    logger.info(`创建临时分支: ${tempBranch}`)
+    await git.checkoutNewBranch(tempBranch, currentBranch)
+
+    logger.info(`执行 rebase: ${tempBranch} onto origin/${targetBranch}`)
+    await git.rebase(`origin/${targetBranch}`)
+
+    logger.info(`rebase 成功，推送目标分支: HEAD -> ${targetBranch}`)
+    await git.pushRefspec('HEAD', targetBranch, {
+      noVerify: inputOptions.noVerify
+    })
+
+    logger.success(`rebase 后推送成功: ${currentBranch} -> ${targetBranch}`)
+    return 'remote-rebased-and-pushed'
+  } catch (error) {
+    const status = classifyRemoteRebaseFailure(error)
+
+    if (status === 'remote-rebase-conflicted') {
+      logger.warn(`rebase 出现冲突，已停止推送 ${currentBranch} -> ${targetBranch}，请先在本地处理冲突。`)
+    } else {
+      logger.warn(`rebase 后推送失败 ${currentBranch} -> ${targetBranch}: ${error.message}`)
+    }
+
+    return status
+  } finally {
+    const inProgressOperation = await git.getInProgressOperation()
+    if (inProgressOperation === 'rebase') {
+      await git.rebaseAbort()
+    }
+
+    await cleanupTemporaryRebaseBranch(git, tempBranch, currentBranch)
+  }
+}
+
 async function runRemoteMergeMode({
   git,
   currentBranch,
@@ -151,29 +239,30 @@ async function runRemoteMergeMode({
   protectedBranches
 }) {
   const summary = []
-
-  if (inputOptions.notPushCurrent) {
-    logger.warn('远程合并模式下 --not-push-current 不生效，当前分支会先推送到远程。')
-  }
+  const shouldPushCurrent = branchTargets.includes(currentBranch)
 
   logger.info(`远程合并模式: source=${currentBranch}, targets=${branchTargets.join(', ')}`)
 
-  const currentRemoteExists = await git.branchExistsRemote(currentBranch)
-  if (currentRemoteExists) {
-    logger.info(`同步远程分支: ${currentBranch}`)
-    await git.pull(currentBranch, {
-      allowUnrelatedHistories: true,
-      noRebase: true
-    })
-  }
+  if (shouldPushCurrent) {
+    const currentRemoteExists = await git.branchExistsRemote(currentBranch)
+    if (currentRemoteExists) {
+      logger.info(`同步远程分支: ${currentBranch}`)
+      await git.pull(currentBranch, {
+        allowUnrelatedHistories: true,
+        noRebase: true
+      })
+    }
 
-  logger.info(`推送源分支到远程: ${currentBranch}`)
-  await git.push(currentBranch, {
-    setUpstream: !currentRemoteExists,
-    noVerify: inputOptions.noVerify
-  })
-  logger.success(`源分支推送成功: ${currentBranch}`)
-  summary.push({ branch: currentBranch, status: 'pushed' })
+    logger.info(`推送源分支到远程: ${currentBranch}`)
+    await git.push(currentBranch, {
+      setUpstream: !currentRemoteExists,
+      noVerify: inputOptions.noVerify
+    })
+    logger.success(`源分支推送成功: ${currentBranch}`)
+    summary.push({ branch: currentBranch, status: 'pushed' })
+  } else {
+    logger.info('按 --not-push-current 配置，跳过当前分支远程推送。')
+  }
 
   for (const targetBranch of branchTargets) {
     if (targetBranch === currentBranch) {
@@ -204,6 +293,18 @@ async function runRemoteMergeMode({
     } catch (error) {
       const status = classifyRemoteMergeFailure(error)
       logger.warn(`远程合并失败 ${currentBranch} -> ${targetBranch}: ${error.message}`)
+
+      if (status === 'remote-merge-rejected') {
+        const fallbackStatus = await pushTargetByRebaseFallback({
+          git,
+          currentBranch,
+          targetBranch,
+          inputOptions
+        })
+        summary.push({ branch: targetBranch, status: fallbackStatus })
+        continue
+      }
+
       summary.push({ branch: targetBranch, status })
     }
   }
@@ -259,54 +360,20 @@ export async function runPushWorkflow(inputOptions) {
     })
   }
 
-  const remoteMergeMode = Boolean(inputOptions.remoteMerge)
-  const branchTargets = uniqueBranches([
-    ...(remoteMergeMode ? [currentBranch] : (inputOptions.notPushCurrent ? [] : [currentBranch])),
+  const remoteMergeMode = inputOptions.remoteMerge !== false
+  let branchTargets = uniqueBranches([
+    ...(inputOptions.notPushCurrent ? [] : [currentBranch]),
     ...(inputOptions.targetBranches || [])
   ])
+  if (inputOptions.notPushCurrent) {
+    branchTargets = branchTargets.filter((branchName) => branchName !== currentBranch)
+  }
 
   if (!branchTargets.length) {
     throw new IcodeError('没有可执行的目标分支。', {
       code: 'PUSH_EMPTY_TARGETS',
       exitCode: 2
     })
-  }
-
-  let aiReviewResult = null
-  if (inputOptions.aiReview) {
-    try {
-      aiReviewResult = await runAiRiskReviewWorkflow({
-        git,
-        context,
-        currentBranch,
-        targetBranches: branchTargets,
-        profile: inputOptions.aiProfile
-      })
-
-      logger.info(`AI 风险评审: decision=${aiReviewResult.decision}, risk=${aiReviewResult.riskLevel}`)
-      if (aiReviewResult.reasons.length) {
-        logger.warn(`AI 风险原因: ${aiReviewResult.reasons.join(' | ')}`)
-      }
-
-      if (aiReviewResult.decision === 'block') {
-        if (inputOptions.yes) {
-          logger.warn('AI 风险评审结果为 block，但 --yes 已开启，继续执行。')
-        } else {
-          const accepted = await confirm('AI 评审建议阻断，是否仍继续 push ?', false)
-          if (!accepted) {
-            return {
-              canceled: true,
-              reason: 'ai-review-block',
-              branchTargets,
-              aiReview: aiReviewResult,
-              repoRoot: context.topLevelPath
-            }
-          }
-        }
-      }
-    } catch (error) {
-      logger.warn(`AI 风险评审失败，已跳过: ${error.message}`)
-    }
   }
 
   if (!inputOptions.yes) {
@@ -341,7 +408,6 @@ export async function runPushWorkflow(inputOptions) {
         repoRoot: context.topLevelPath,
         currentBranch,
         summary: remoteSummary,
-        aiReview: aiReviewResult,
         inheritedFromParent: context.inheritedFromParent
       }
     }
@@ -412,7 +478,6 @@ export async function runPushWorkflow(inputOptions) {
     repoRoot: context.topLevelPath,
     currentBranch,
     summary,
-    aiReview: aiReviewResult,
     inheritedFromParent: context.inheritedFromParent
   }
 }

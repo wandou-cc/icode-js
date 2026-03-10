@@ -17,6 +17,9 @@ Subcommands:
   conflict      AI 冲突解决建议
   codereview    AI 代码评审
 
+Tips:
+  icode ai <subcommand> -h  查看子命令参数说明
+
 Examples:
   icode ai commit --apply -y
   icode ai conflict
@@ -33,9 +36,9 @@ Options:
   --apply                 直接使用 AI 信息执行 commit
   --lang <zh|en>          输出语言，默认 zh
   --profile <name>        指定 AI profile
-  --repo-mode <mode>      仓库模式: auto | strict
+  --repo-mode <mode>      仓库模式: auto(自动继承父仓库) | strict(禁止继承)
   --no-verify             commit 时跳过 hook/husky 校验
-  -y, --yes               自动确认
+  -y, --yes               自动确认（跳过确认提示）
   -h, --help              查看帮助
 `)
 }
@@ -47,7 +50,7 @@ Usage:
 
 Options:
   --profile <name>        指定 AI profile
-  --repo-mode <mode>      仓库模式: auto | strict
+  --repo-mode <mode>      仓库模式: auto(自动继承父仓库) | strict(禁止继承)
   -h, --help              查看帮助
 `)
 }
@@ -62,7 +65,8 @@ Options:
   --head <ref>            diff 终点，默认 HEAD
   --focus <text>          评审重点（安全/性能/测试等）
   --profile <name>        指定 AI profile
-  --repo-mode <mode>      仓库模式: auto | strict
+  --repo-mode <mode>      仓库模式: auto(自动继承父仓库) | strict(禁止继承)
+  --dump-response         输出 AI 原始响应（调试数据格式）
   -h, --help              查看帮助
 `)
 }
@@ -172,6 +176,7 @@ async function runCodeReviewSubcommand(rawArgs) {
       focus: { type: 'string' },
       profile: { type: 'string' },
       'repo-mode': { type: 'string' },
+      'dump-response': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }
     }
   })
@@ -186,7 +191,8 @@ async function runCodeReviewSubcommand(rawArgs) {
     headRef: resolveStringOption(parsed.values.head, scopedOptions.head, ''),
     focus: resolveStringOption(parsed.values.focus, scopedOptions.focus, ''),
     profile: resolveStringOption(parsed.values.profile, scopedOptions.profile, ''),
-    repoMode: resolveStringOption(parsed.values['repo-mode'], scopedOptions.repoMode, 'auto')
+    repoMode: resolveStringOption(parsed.values['repo-mode'], scopedOptions.repoMode, 'auto'),
+    dumpResponse: resolveBooleanOption(parsed.values['dump-response'], scopedOptions.dumpResponse, false)
   })
 
   logger.info(`Code Review 范围: ${result.rangeSpec}`)

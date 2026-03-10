@@ -52,6 +52,14 @@ export class GitService {
       return 'cherry-pick'
     }
 
+    if (
+      this.operationFileExists('REBASE_HEAD') ||
+      this.operationFileExists('rebase-apply') ||
+      this.operationFileExists('rebase-merge')
+    ) {
+      return 'rebase'
+    }
+
     return null
   }
 
@@ -75,6 +83,21 @@ export class GitService {
       .split('\n')
       .map((item) => item.trim())
       .filter(Boolean)
+  }
+
+  async listRemoteBranches(remoteName = 'origin') {
+    const result = await this.exec(['for-each-ref', '--format=%(refname:strip=3)', `refs/remotes/${remoteName}`], {
+      allowFailure: true
+    })
+
+    if (result.exitCode !== 0) {
+      return []
+    }
+
+    return result.stdout
+      .split('\n')
+      .map((item) => item.trim())
+      .filter((item) => item && item !== 'HEAD')
   }
 
   async listMergedLocalBranches(targetRef) {
@@ -130,6 +153,14 @@ export class GitService {
     await this.exec(args)
   }
 
+  async rebase(fromRef) {
+    await this.exec(['rebase', fromRef])
+  }
+
+  async rebaseAbort() {
+    await this.exec(['rebase', '--abort'], { allowFailure: true })
+  }
+
   async statusPorcelain() {
     const result = await this.exec(['status', '--porcelain'])
     return result.stdout
@@ -147,6 +178,16 @@ export class GitService {
 
   async diffStaged() {
     const result = await this.exec(['diff', '--staged'])
+    return result.stdout
+  }
+
+  async diffStagedStat() {
+    const result = await this.exec(['diff', '--staged', '--stat'])
+    return result.stdout
+  }
+
+  async diffStagedNameStatus() {
+    const result = await this.exec(['diff', '--staged', '--name-status'])
     return result.stdout
   }
 
@@ -186,6 +227,11 @@ export class GitService {
     }
     const result = await this.exec(args, { allowFailure: true })
     return result.stdout
+  }
+
+  async showCommitSummary(ref) {
+    const result = await this.exec(['show', '-s', '--format=%h %s', ref], { allowFailure: true })
+    return cleanOutput(result.stdout)
   }
 
   async listConflictedFiles() {

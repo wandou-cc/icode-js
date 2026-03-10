@@ -13,14 +13,14 @@ Configure Ollama and command defaults once:
 
 <icode> config ai options set commit --json '{"profile":"ollama-local","lang":"zh","yes":true}'
 <icode> config ai options set codereview --json '{"profile":"ollama-local","base":"origin/main"}'
-<icode> config ai options set push --json '{"aiCommit":true,"aiReview":true,"aiProfile":"ollama-local","yes":true}'
+<icode> config ai options set push --json '{"aiCommit":true,"aiProfile":"ollama-local","yes":true}'
 ```
 
 Run direct commands after setup:
 
 ```bash
 <icode> ai codereview
-<icode> push release test --ai-commit -y -o --ai-review
+<icode> push release test --ai-commit -y -o
 ```
 
 ## 2) Submit Current Branch and Merge into Release/Test
@@ -28,7 +28,7 @@ Run direct commands after setup:
 Prefer remote merge mode when team process requires server-side merge:
 
 ```bash
-<icode> push release test --ai-commit -y -o --ai-review
+<icode> push release test --ai-commit -y -o
 ```
 
 Use local merge mode when local branch switching/merge is acceptable:
@@ -39,16 +39,16 @@ Use local merge mode when local branch switching/merge is acceptable:
 
 ## 3) Recover from Bad Commit
 
-Safe rollback (recommended default):
+Safe undo (recommended default):
 
 ```bash
-<icode> rollback HEAD~1 --mode revert -y
+<icode> undo --mode revert --ref HEAD~1 -y
 ```
 
 Hard reset (only with explicit user confirmation):
 
 ```bash
-<icode> rollback HEAD~1 --mode hard -y
+<icode> undo --mode hard --ref HEAD~1 -y
 ```
 
 ## 4) Migrate Feature Commits into Target Branch
@@ -85,5 +85,5 @@ When user wants to forbid inherited parent Git repository execution:
 <icode> config ai list
 <icode> config ai set ollama --format ollama --base-url http://127.0.0.1:11434 --model glm-5:cloud --activate
 <icode> config ai test ollama
-<icode> push release test --ai-commit -o -y --ai-review --ai-profile ollama
+<icode> push release test --ai-commit -o -y --ai-profile ollama
 ```

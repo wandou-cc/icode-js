@@ -8,15 +8,21 @@ function printHelp() {
 Usage:
   icode sync [branch...] [options]
 
+Arguments:
+  [branch...]             需要同步的分支列表（可多个）
+
 Options:
   --all-local             自动同步全部本地分支
   --merge-main            同步后把主分支 merge 到目标分支
   --rebase                pull 时使用 rebase
   --push                  同步后自动 push
-  -y, --yes               自动确认
-  --repo-mode <mode>      仓库模式: auto | strict
+  -y, --yes               自动确认（跳过确认提示）
+  --repo-mode <mode>      仓库模式: auto(自动继承父仓库) | strict(禁止继承)
   --no-verify             push 时跳过 hook/husky 校验
   -h, --help              查看帮助
+
+Notes:
+  未传分支时默认同步当前分支与主分支。
 
 Examples:
   icode sync

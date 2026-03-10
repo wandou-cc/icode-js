@@ -9,12 +9,15 @@ Usage:
   icode tag [options]
 
 Options:
-  -n, --name <tag>         指定 tag 名
+  -n, --name <tag>         指定 tag 名（默认 vYYYYMMDD_NN）
   -m, --message <msg>      tag 备注
   --from <ref>             从指定分支/commit 创建 tag
-  --repo-mode <mode>       仓库模式: auto | strict
+  --repo-mode <mode>       仓库模式: auto(自动继承父仓库) | strict(禁止继承)
   --no-verify              跳过 hook/husky 校验
   -h, --help               查看帮助
+
+Notes:
+  默认 tag 规则: vYYYYMMDD_NN（例如 v20260309_01）。
 `)
 }
 

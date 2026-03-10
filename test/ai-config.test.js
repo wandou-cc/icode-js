@@ -31,7 +31,11 @@ test('ai-config set/use/list profile flow', () => {
       provider: 'ollama',
       format: 'ollama',
       baseUrl: 'http://127.0.0.1:11434',
-      model: 'qwen2.5:7b'
+      model: 'qwen2.5:7b',
+      requestBody: {
+        think: false,
+        stream: false
+      }
     })
 
     useAiProfile('ollama')
@@ -39,6 +43,8 @@ test('ai-config set/use/list profile flow', () => {
     assert.equal(current.name, 'ollama')
     assert.equal(current.format, 'ollama')
     assert.equal(current.baseUrl, 'http://127.0.0.1:11434')
+    assert.equal(current.requestBody.think, false)
+    assert.equal(current.requestBody.stream, false)
 
     const profiles = listAiProfiles()
     assert.equal(profiles.length, 2)
@@ -61,7 +67,7 @@ test('ai-config command options set/get/remove flow', () => {
     })
 
     upsertAiCommandOptions('push', {
-      aiReview: true,
+      aiCommit: true,
       aiProfile: 'local'
     })
 
@@ -78,7 +84,7 @@ test('ai-config command options set/get/remove flow', () => {
     assert.equal(mergedCommitOptions.profile, 'local')
 
     const allOptions = listAiCommandOptions()
-    assert.equal(allOptions.push.aiReview, true)
+    assert.equal(allOptions.push.aiCommit, true)
 
     removeAiCommandOptions('push')
     assert.deepEqual(getAiCommandOptions('push'), {})

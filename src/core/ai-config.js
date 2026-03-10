@@ -9,7 +9,8 @@ const DEFAULT_PROFILE = {
   model: '',
   temperature: 0.2,
   maxTokens: 1200,
-  headers: {}
+  headers: {},
+  requestBody: {}
 }
 
 const ALLOWED_OPTION_SCOPES = new Set(['commit', 'conflict', 'codereview', 'push'])
@@ -63,7 +64,8 @@ function normalizeProfile(profile = {}) {
     model: (profile.model || '').trim(),
     temperature: Number.isFinite(Number(profile.temperature)) ? Number(profile.temperature) : DEFAULT_PROFILE.temperature,
     maxTokens: Number.isFinite(Number(profile.maxTokens)) ? Number(profile.maxTokens) : DEFAULT_PROFILE.maxTokens,
-    headers: profile.headers && typeof profile.headers === 'object' ? profile.headers : {}
+    headers: profile.headers && typeof profile.headers === 'object' ? profile.headers : {},
+    requestBody: profile.requestBody && typeof profile.requestBody === 'object' && !Array.isArray(profile.requestBody) ? profile.requestBody : {}
   }
 
   return next

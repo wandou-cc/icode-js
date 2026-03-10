@@ -27,22 +27,19 @@ Use one of the following:
 - Push + merge to multiple branches:
   - Local merge mode: `<icode> push <target...> -m "<message>" -y`
   - Remote merge mode: `<icode> push <target...> -m "<message>" -y -o`
-  - Remote merge with AI commit: `<icode> push <target...> --ai-commit -y -o [--ai-review]`
+  - Remote merge with AI commit: `<icode> push <target...> --ai-commit -y -o`
 - Common push control flags:
   - `--not-push-current`
   - `--pull-main`
   - `--ai-commit`
-  - `--ai-review`
   - `--ai-profile <name>`
   - `--force-protected`
   - `--no-verify`
 
 ## Recovery and Cleanup
 
-- Rollback:
-  - `<icode> rollback [ref] [--mode revert|soft|mixed|hard] [-y]`
 - Guided undo:
-  - `<icode> undo [--mode ... --ref ... --recover continue|abort|keep]`
+  - `<icode> undo [--mode revert|soft|mixed|hard] [--ref <ref>] [--recover continue|abort|keep] [-y]`
 - Migrate commits:
   - `<icode> migrate <source> <target> [--range <spec>] [--push]`
 - Sync branches:

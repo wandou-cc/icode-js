@@ -2,7 +2,7 @@ import { IcodeError } from '../core/errors.js'
 import { resolveGitContext } from '../core/git-context.js'
 import { GitService } from '../core/git-service.js'
 import { logger } from '../core/logger.js'
-import { chooseOne, confirm, input } from '../core/prompts.js'
+import { chooseOne } from '../core/prompts.js'
 import { runRollbackWorkflow } from './rollback-workflow.js'
 
 const UNDO_OPTIONS = [
@@ -28,6 +28,13 @@ const UNDO_OPTIONS = [
   }
 ]
 
+const UNDO_REF_SUGGESTIONS = {
+  revert: ['HEAD', 'HEAD~1', 'HEAD~2', 'HEAD~3', 'HEAD~5'],
+  soft: ['HEAD~1', 'HEAD~2', 'HEAD~3', 'HEAD~5', 'HEAD'],
+  mixed: ['HEAD~1', 'HEAD~2', 'HEAD~3', 'HEAD~5', 'HEAD'],
+  hard: ['HEAD~1', 'HEAD~2', 'HEAD~3', 'HEAD~5', 'HEAD']
+}
+
 function parseSelection(selection) {
   if (!selection || selection === 'cancel') {
     return {
@@ -39,6 +46,55 @@ function parseSelection(selection) {
   return {
     mode,
     ref
+  }
+}
+
+function resolveDefaultRef(mode) {
+  return mode === 'revert' ? 'HEAD' : 'HEAD~1'
+}
+
+async function buildUndoRefChoices(options, mode) {
+  const fallbackRef = resolveDefaultRef(mode)
+  const suggestedRefs = UNDO_REF_SUGGESTIONS[mode] || UNDO_REF_SUGGESTIONS.soft
+  const context = await resolveGitContext({
+    cwd: options.cwd,
+    repoMode: options.repoMode
+  })
+  const git = new GitService(context)
+  const choices = []
+  const seen = new Set()
+
+  for (const ref of [fallbackRef, ...suggestedRefs]) {
+    if (seen.has(ref)) {
+      continue
+    }
+    seen.add(ref)
+    const summary = await git.showCommitSummary(ref)
+    if (!summary) {
+      continue
+    }
+    choices.push({
+      value: ref,
+      label: `${ref} (${summary})`
+    })
+  }
+
+  if (!choices.length) {
+    choices.push({
+      value: fallbackRef,
+      label: fallbackRef
+    })
+  }
+
+  choices.push({
+    value: 'cancel',
+    label: '取消'
+  })
+
+  const defaultIndex = Math.max(0, choices.findIndex((item) => item.value === fallbackRef))
+  return {
+    choices,
+    defaultIndex
   }
 }
 
@@ -214,13 +270,35 @@ export async function runUndoWorkflow(options) {
     ref = parsed.ref
   }
 
+  const defaultRef = resolveDefaultRef(mode)
+  if (!ref) {
+    if (options.yes) {
+      ref = defaultRef
+    } else {
+      const refChoice = await buildUndoRefChoices(options, mode)
+      const selectedRef = await chooseOne('请选择要回滚的 ref：', refChoice.choices, refChoice.defaultIndex)
+      if (selectedRef === 'cancel') {
+        logger.warn('已取消 undo。')
+        return {
+          canceled: true,
+          mode,
+          ref: defaultRef
+        }
+      }
+      ref = selectedRef
+    }
+  }
+
   // 给用户最后一次确认，减少误用 reset/hard 造成的数据丢失风险。
   if (!options.yes) {
-    const finalRef = ref || (mode === 'revert' ? 'HEAD' : 'HEAD~1')
-    const answer = await input('请输入要回滚的 ref', finalRef)
-    ref = answer.trim() || finalRef
-
-    const accepted = await confirm(`确认执行 ${mode} 回滚，ref=${ref} ?`, mode !== 'hard')
+    const accepted = (await chooseOne(
+      `确认执行 ${mode} 回滚，ref=${ref} ?`,
+      [
+        { value: 'yes', label: '确认执行' },
+        { value: 'no', label: '取消' }
+      ],
+      mode !== 'hard' ? 0 : 1
+    )) === 'yes'
     if (!accepted) {
       logger.warn('已取消 undo。')
       return {

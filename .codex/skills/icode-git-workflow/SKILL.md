@@ -1,6 +1,6 @@
 ---
 name: icode-git-workflow
-description: Use this skill when users want to run Git submission workflows through icode-js CLI, including branch checkout/create, commit+push, multi-target merge push, rollback/undo, migrate/cherry-pick, sync/clean/tag, and AI-assisted commit/conflict/codereview. Also use this skill when users ask to configure AI providers (OpenAI/Anthropic/Ollama) or set persistent command defaults with `icode config ai options`. Trigger on requests like “帮我提交代码”, “回滚”, “迁移分支内容”, “做 codereview”, “配置 AI 提交参数”.
+description: Use this skill when users want to run Git submission workflows through icode-js CLI, including branch checkout/create, commit+push, multi-target merge push, undo/recover, migrate/cherry-pick, sync/clean/tag, and AI-assisted commit/conflict/codereview. Also use this skill when users ask to configure AI providers (OpenAI/Anthropic/Ollama) or set persistent command defaults with `icode config ai options`. Trigger on requests like “帮我提交代码”, “回滚”, “迁移分支内容”, “做 codereview”, “配置 AI 提交参数”.
 ---
 
 # Icode Git Workflow
@@ -34,12 +34,11 @@ Map user intent to the exact command class:
 
 - Commit/push current branch: `<icode> push -m "<msg>" [-y]`
 - AI 自动提交后再推送: `<icode> push --ai-commit [-y]`
-- AI 自动提交并远程合并多个目标分支: `<icode> push release test --ai-commit -y -o [--ai-review]`
+- AI 自动提交并远程合并多个目标分支: `<icode> push release test --ai-commit -y -o`
 - AI commit message generation: `<icode> ai commit [--apply] [--profile <name>]`
 - AI code review: `<icode> ai codereview [--base ... --head ... --profile ...]`
 - Branch migration/cherry-pick: `<icode> migrate <source> <target> [--range ...] [--push]`
-- Safe rollback: `<icode> rollback [ref] [--mode revert|soft|mixed|hard]`
-- Guided undo: `<icode> undo [--mode ... --ref ... --recover ...]`
+- Undo/recover: `<icode> undo [--mode ... --ref ... --recover ...]`
 - Cleanup merged branches: `<icode> clean [--remote] [--force]`
 - Sync branches in bulk: `<icode> sync [--all-local] [--merge-main] [--push]`
 - Tag release: `<icode> tag [--name ... --message ... --from ...]`
@@ -75,12 +74,13 @@ Handle common issues with direct actions:
 2. `AI profile xxx 缺少 apiKey`: set `--api-key` for OpenAI/Anthropic; Ollama local usually no key needed.
 3. Merge rejected (`remote-merge-rejected`): pull/rebase target branch and retry push.
 4. Protected branch skipped: confirm and rerun with `--force-protected` only when approved.
+5. `--ai-review` is deprecated/no-op: remove it from command and from `config ai options push`.
 
 ## Safety Rules
 
 Apply these execution constraints:
 
-1. Avoid destructive rollback (`--mode hard`) unless user explicitly confirms.
+1. Avoid destructive undo mode (`icode undo --mode hard`) unless user explicitly confirms.
 2. Avoid `--no-verify` unless user requests hook bypass.
 3. Avoid `--force-protected` unless user explicitly approves protected-branch override.
 4. When a command fails, report the failing step and propose the nearest safe fallback command.

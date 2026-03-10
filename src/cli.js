@@ -7,13 +7,25 @@ import { printMainHelp } from './commands/help.js'
 import { runInfoCommand } from './commands/info.js'
 import { runMigrateCommand } from './commands/migrate.js'
 import { runPushCommand } from './commands/push.js'
-import { runRollbackCommand } from './commands/rollback.js'
 import { runSyncCommand } from './commands/sync.js'
 import { runTagCommand } from './commands/tag.js'
 import { runUndoCommand } from './commands/undo.js'
 import { asIcodeError } from './core/errors.js'
 import { logger } from './core/logger.js'
 import { normalizeLegacyArgs } from './core/args.js'
+
+function isTruthy(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['1', 'true', 'yes', 'y', 'on'].includes(normalized)
+}
+
+function serializeErrorMeta(meta) {
+  try {
+    return JSON.stringify(meta, null, 2)
+  } catch {
+    return String(meta)
+  }
+}
 
 const COMMANDS = {
   ai: runAiCommand,
@@ -22,7 +34,6 @@ const COMMANDS = {
   push: runPushCommand,
   sync: runSyncCommand,
   clean: runCleanCommand,
-  rollback: runRollbackCommand,
   undo: runUndoCommand,
   migrate: runMigrateCommand,
   tag: runTagCommand,
@@ -52,6 +63,7 @@ function applyGlobalFlags(globalArgs) {
   for (const flag of globalArgs) {
     if (flag === '-d' || flag === '--debug') {
       logger.setVerbose(true)
+      process.env.ICODE_DEBUG = '1'
       continue
     }
 
@@ -96,5 +108,15 @@ async function main() {
 main().catch((error) => {
   const normalized = asIcodeError(error)
   logger.error(normalized.message)
+
+  if (normalized.code === 'AI_EMPTY_RESPONSE' && normalized.meta?.rawResponse) {
+    logger.warn('AI 原始响应如下（用于排查响应格式）:')
+    process.stderr.write(`${normalized.meta.rawResponse}\n`)
+  }
+
+  if ((process.env.ICODE_DEBUG === '1' || isTruthy(process.env.ICODE_AI_DUMP_RESPONSE)) && normalized.meta && Object.keys(normalized.meta).length) {
+    process.stderr.write(`[icode:debug] error meta:\n${serializeErrorMeta(normalized.meta)}\n`)
+  }
+
   process.exit(normalized.exitCode || 1)
 })
