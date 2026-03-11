@@ -3,6 +3,7 @@ import { resolveGitContext } from '../core/git-context.js'
 import { GitService } from '../core/git-service.js'
 import { logger } from '../core/logger.js'
 import { askAiJson } from '../core/ai-client.js'
+import { scanCommitConventions } from '../core/commit-conventions.js'
 import { confirm } from '../core/prompts.js'
 
 function normalizeCommitType(value) {
@@ -59,13 +60,21 @@ export async function runAiCommitWorkflow(options) {
   }
 
   const limitedDiff = diff.length > 12000 ? `${diff.slice(0, 12000)}\n\n...<truncated>` : diff
+  const conventionContext = scanCommitConventions(context)
+  const conventionPrompt = conventionContext.hasConventions
+    ? `Local commit conventions were detected from repository hooks/config files. Follow these local rules first when generating the commit message.\n\n${conventionContext.summary}\n\n`
+    : ''
 
   const language = (options.lang || 'zh').trim().toLowerCase() === 'en' ? 'English' : 'Chinese'
+
+  if (conventionContext.hasConventions && !options.silentContextLog) {
+    logger.info(`检测到提交规范配置，AI 将优先参考: ${conventionContext.sources.join(', ')}`)
+  }
 
   const { parsed, text } = await askAiJson(
     {
       systemPrompt: `You are a senior software engineer. Generate a concise Conventional Commit message. Output JSON only. Language: ${language}.`,
-      userPrompt: `Based on the following git diff, return JSON with fields:\n{\"type\":\"feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert\",\"scope\":\"optional\",\"subject\":\"required one-line summary\",\"body\":\"optional details\"}\n\nDiff Source: ${diffSource}\n\nDiff:\n${limitedDiff}`
+      userPrompt: `${conventionPrompt}Based on the following git diff, return JSON with fields:\n{\"type\":\"feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert\",\"scope\":\"optional\",\"subject\":\"required one-line summary\",\"body\":\"optional details\"}\n\nDiff Source: ${diffSource}\n\nDiff:\n${limitedDiff}`
     },
     {
       profile: options.profile

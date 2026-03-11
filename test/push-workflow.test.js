@@ -81,7 +81,7 @@ async function remoteBranchExists(remotePath, branchName) {
   return result.exitCode === 0
 }
 
-test('push-workflow uses remote rebase strategy by default for target branches', async () => {
+test('push-workflow uses local merge strategy by default for target branches', async () => {
   const fixture = await createRemoteMergeFixture()
 
   const result = await runPushWorkflow({
@@ -93,7 +93,7 @@ test('push-workflow uses remote rebase strategy by default for target branches',
 
   assert.deepEqual(result.summary, [
     { branch: 'source', status: 'pushed' },
-    { branch: 'test', status: 'remote-rebased-and-pushed' }
+    { branch: 'test', status: 'merged-and-pushed' }
   ])
 })
 

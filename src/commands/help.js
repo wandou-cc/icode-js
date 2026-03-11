@@ -16,6 +16,7 @@ Commands:
   migrate     迁移分支提交（cherry-pick）
   tag         创建并推送 tag（支持自动命名）
   config      查看和修改本地配置（含 AI profile）
+  explain     AI 解释 Git diff（自然语言）
   info        查看当前 git 与配置环境
   help        查看帮助（命令总览）
 
@@ -29,8 +30,9 @@ Tips:
 Examples:
   icode checkout feature/login main --push-origin
   icode ai commit --apply -y
-  icode ai codereview --base origin/main --head HEAD
+  icode ai codereview
   icode codereview --base origin/main --head HEAD
+  icode explain --base origin/main --head HEAD
   icode push release test -m "feat: batch publish" -y
   icode push release test --ai-commit -y
   icode push release test -m "feat: keep merge commit" --local-merge -y

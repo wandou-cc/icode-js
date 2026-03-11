@@ -32,9 +32,9 @@ Arguments:
 Options:
   -m, --message <msg>         提交信息（未填会提示输入）
   -y, --yes                   自动确认（跳过确认提示）
-  -o, --origin                显式使用远程 rebase 推送模式（默认）
-  --local-merge               使用本地 merge 模式（会切换分支并生成 merge commit）
-  --ai-commit                 push 前自动执行 AI commit（生成并应用提交信息）
+  -o, --origin                使用远程 rebase 推送模式
+  --local-merge               使用本地 merge 模式（默认，会切换分支并生成 merge commit）
+  --ai-commit                 push 前自动执行 AI commit（会参考本地 hook/commitlint 规范）
   --ai-profile <name>         指定 AI profile（用于 --ai-commit）
   --pull-main                 提交前将主分支同步到当前分支
   --not-push-current          不推送当前分支，只处理目标分支
@@ -44,7 +44,8 @@ Options:
   -h, --help                  查看帮助
 
 Notes:
-  默认使用远程 rebase 推送模式；未指定 target 时默认处理当前分支。
+  默认使用本地 merge 模式；传入 --origin 才启用远程 rebase 推送模式。
+  未指定 target 时默认处理当前分支。
   布尔开关仅在命令行显式传入时生效（如 --ai-commit / --pull-main / --no-verify / -y）。
 `)
 }
@@ -102,8 +103,7 @@ function resolveRemoteMergeMode(cliValues) {
     return true
   }
 
-  // 默认走远程 rebase 推送，避免本地 merge 带来的额外 merge commit。
-  return true
+  return false
 }
 
 export function resolvePushWorkflowOptions(parsedValues, parsedPositionals, scopedOptions = {}) {

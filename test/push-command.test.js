@@ -27,7 +27,7 @@ test('push options only enable boolean flags when passed on CLI', () => {
     targetBranches: ['dev', 'test'],
     message: 'fix: test',
     yes: false,
-    remoteMerge: true,
+    remoteMerge: false,
     aiCommit: false,
     aiCommitLang: 'en',
     aiProfile: 'ollama',

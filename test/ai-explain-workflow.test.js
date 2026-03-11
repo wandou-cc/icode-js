@@ -5,10 +5,10 @@ import path from 'node:path'
 import test from 'node:test'
 import { runCommand } from '../src/core/shell.js'
 import { upsertAiProfile, useAiProfile } from '../src/core/ai-config.js'
-import { runAiCodeReviewWorkflow } from '../src/workflows/ai-codereview-workflow.js'
+import { runAiExplainWorkflow } from '../src/workflows/ai-explain-workflow.js'
 
-test('ai-codereview falls back to uncommitted changes when range diff is empty', async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-codereview-test-'))
+test('ai-explain falls back to uncommitted changes when range diff is empty', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-explain-test-'))
   const repoPath = path.join(tempRoot, 'repo')
   process.env.ICODE_CONFIG_PATH = path.join(tempRoot, 'config.json')
 
@@ -43,7 +43,7 @@ test('ai-codereview falls back to uncommitted changes when range diff is empty',
           choices: [
             {
               message: {
-                content: 'review-from-uncommitted'
+                content: 'explain-from-uncommitted'
               }
             }
           ]
@@ -51,7 +51,7 @@ test('ai-codereview falls back to uncommitted changes when range diff is empty',
       }
     })
 
-    const result = await runAiCodeReviewWorkflow({
+    const result = await runAiExplainWorkflow({
       cwd: repoPath,
       baseRef: 'HEAD',
       headRef: 'HEAD',
@@ -60,77 +60,15 @@ test('ai-codereview falls back to uncommitted changes when range diff is empty',
     })
 
     assert.equal(result.rangeSpec, 'uncommitted(staged+working-tree)')
-    assert.equal(result.review, 'review-from-uncommitted')
+    assert.equal(result.explanation, 'explain-from-uncommitted')
   } finally {
     global.fetch = originalFetch
     delete process.env.ICODE_CONFIG_PATH
   }
 })
 
-test('ai-codereview defaults to uncommitted changes without base/head', async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-codereview-test-'))
-  const repoPath = path.join(tempRoot, 'repo')
-  process.env.ICODE_CONFIG_PATH = path.join(tempRoot, 'config.json')
-
-  const originalFetch = global.fetch
-
-  try {
-    fs.mkdirSync(repoPath, { recursive: true })
-    await runCommand('git', ['init'], { cwd: repoPath })
-    await runCommand('git', ['config', 'user.email', 'test@example.com'], { cwd: repoPath })
-    await runCommand('git', ['config', 'user.name', 'test'], { cwd: repoPath })
-
-    fs.writeFileSync(path.join(repoPath, 'a.txt'), 'base\n', 'utf8')
-    await runCommand('git', ['add', '-A'], { cwd: repoPath })
-    await runCommand('git', ['commit', '-m', 'chore: init'], { cwd: repoPath })
-
-    await runCommand('git', ['checkout', '-b', 'feature/test'], { cwd: repoPath })
-    fs.writeFileSync(path.join(repoPath, 'a.txt'), 'base\nworktree\n', 'utf8')
-
-    upsertAiProfile('local', {
-      provider: 'openai',
-      format: 'openai',
-      baseUrl: 'https://api.openai.com/v1',
-      apiKey: 'sk-test',
-      model: 'gpt-4o-mini'
-    })
-    useAiProfile('local')
-
-    global.fetch = async () => ({
-      ok: true,
-      status: 200,
-      headers: {
-        forEach() {}
-      },
-      async text() {
-        return JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: 'review-from-default-uncommitted'
-              }
-            }
-          ]
-        })
-      }
-    })
-
-    const result = await runAiCodeReviewWorkflow({
-      cwd: repoPath,
-      profile: 'local',
-      repoMode: 'auto'
-    })
-
-    assert.equal(result.rangeSpec, 'uncommitted(staged+working-tree)')
-    assert.equal(result.review, 'review-from-default-uncommitted')
-  } finally {
-    global.fetch = originalFetch
-    delete process.env.ICODE_CONFIG_PATH
-  }
-})
-
-test('ai-codereview falls back to local default branch when remote base is unavailable', async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-codereview-test-'))
+test('ai-explain falls back to local default branch when remote base is unavailable', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-explain-test-'))
   const repoPath = path.join(tempRoot, 'repo')
   process.env.ICODE_CONFIG_PATH = path.join(tempRoot, 'config.json')
 
@@ -173,7 +111,7 @@ test('ai-codereview falls back to local default branch when remote base is unava
           choices: [
             {
               message: {
-                content: 'review-from-local-default-branch'
+                content: 'explain-from-local-default-branch'
               }
             }
           ]
@@ -181,15 +119,65 @@ test('ai-codereview falls back to local default branch when remote base is unava
       }
     })
 
-    const result = await runAiCodeReviewWorkflow({
+    const result = await runAiExplainWorkflow({
       cwd: repoPath,
-      headRef: 'HEAD',
       profile: 'local',
       repoMode: 'auto'
     })
 
     assert.equal(result.rangeSpec, `${defaultBranch}...HEAD`)
-    assert.equal(result.review, 'review-from-local-default-branch')
+    assert.equal(result.explanation, 'explain-from-local-default-branch')
+  } finally {
+    global.fetch = originalFetch
+    delete process.env.ICODE_CONFIG_PATH
+  }
+})
+
+test('ai-explain rejects invalid explicit head even when local edits exist', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-explain-test-'))
+  const repoPath = path.join(tempRoot, 'repo')
+  process.env.ICODE_CONFIG_PATH = path.join(tempRoot, 'config.json')
+
+  const originalFetch = global.fetch
+
+  try {
+    fs.mkdirSync(repoPath, { recursive: true })
+    await runCommand('git', ['init'], { cwd: repoPath })
+    await runCommand('git', ['config', 'user.email', 'test@example.com'], { cwd: repoPath })
+    await runCommand('git', ['config', 'user.name', 'test'], { cwd: repoPath })
+
+    fs.writeFileSync(path.join(repoPath, 'a.txt'), 'base\n', 'utf8')
+    await runCommand('git', ['add', '-A'], { cwd: repoPath })
+    await runCommand('git', ['commit', '-m', 'chore: init'], { cwd: repoPath })
+
+    fs.writeFileSync(path.join(repoPath, 'a.txt'), 'base\nworktree\n', 'utf8')
+
+    upsertAiProfile('local', {
+      provider: 'openai',
+      format: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-test',
+      model: 'gpt-4o-mini'
+    })
+    useAiProfile('local')
+
+    global.fetch = async () => {
+      throw new Error('fetch should not be called when head ref is invalid')
+    }
+
+    await assert.rejects(
+      runAiExplainWorkflow({
+        cwd: repoPath,
+        headRef: 'bad-ref',
+        profile: 'local',
+        repoMode: 'auto'
+      }),
+      (error) => {
+        assert.equal(error.code, 'AI_DIFF_HEAD_INVALID')
+        assert.match(error.message, /bad-ref/)
+        return true
+      }
+    )
   } finally {
     global.fetch = originalFetch
     delete process.env.ICODE_CONFIG_PATH

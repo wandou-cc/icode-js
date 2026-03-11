@@ -6,6 +6,7 @@ import { logger } from '../core/logger.js'
 import { runAiCodeReviewWorkflow } from '../workflows/ai-codereview-workflow.js'
 import { runAiCommitWorkflow } from '../workflows/ai-commit-workflow.js'
 import { runAiConflictWorkflow } from '../workflows/ai-conflict-workflow.js'
+import { runAiExplainWorkflow } from '../workflows/ai-explain-workflow.js'
 
 function printMainHelp() {
   process.stdout.write(`
@@ -13,9 +14,10 @@ Usage:
   icode ai <subcommand> [options]
 
 Subcommands:
-  commit        AI 生成提交信息
+  commit        AI 生成提交信息（会参考本地 hook/commitlint 规范）
   conflict      AI 冲突解决建议
   codereview    AI 代码评审
+  explain       AI 解释 Git diff
 
 Tips:
   icode ai <subcommand> -h  查看子命令参数说明
@@ -24,6 +26,7 @@ Examples:
   icode ai commit --apply -y
   icode ai conflict
   icode ai codereview --base origin/main --head HEAD
+  icode ai explain --base origin/main --head HEAD
 `)
 }
 
@@ -61,9 +64,24 @@ Usage:
   icode ai codereview [options]
 
 Options:
-  --base <ref>            diff 基线，默认 origin/<defaultBranch>
-  --head <ref>            diff 终点，默认 HEAD
+  --base <ref>            指定分支 diff 基线；未传时默认评审暂存区 + 工作区改动
+  --head <ref>            指定分支 diff 终点，默认 HEAD
   --focus <text>          评审重点（安全/性能/测试等）
+  --profile <name>        指定 AI profile
+  --repo-mode <mode>      仓库模式: auto(自动继承父仓库) | strict(禁止继承)
+  --dump-response         输出 AI 原始响应（调试数据格式）
+  -h, --help              查看帮助
+`)
+}
+
+function printExplainHelp() {
+  process.stdout.write(`
+Usage:
+  icode ai explain [options]
+
+Options:
+  --base <ref>            diff 基线，默认 origin/<defaultBranch>；不可用时回退到本地默认分支
+  --head <ref>            diff 终点，默认 HEAD
   --profile <name>        指定 AI profile
   --repo-mode <mode>      仓库模式: auto(自动继承父仓库) | strict(禁止继承)
   --dump-response         输出 AI 原始响应（调试数据格式）
@@ -166,7 +184,6 @@ async function runConflictSubcommand(rawArgs) {
 }
 
 async function runCodeReviewSubcommand(rawArgs) {
-  const scopedOptions = getAiCommandOptions('codereview')
   const parsed = parseArgs({
     args: rawArgs,
     allowPositionals: true,
@@ -187,16 +204,48 @@ async function runCodeReviewSubcommand(rawArgs) {
   }
 
   const result = await runAiCodeReviewWorkflow({
+    baseRef: resolveStringOption(parsed.values.base, '', ''),
+    headRef: resolveStringOption(parsed.values.head, '', ''),
+    focus: resolveStringOption(parsed.values.focus, '', ''),
+    profile: resolveStringOption(parsed.values.profile, '', ''),
+    repoMode: resolveStringOption(parsed.values['repo-mode'], '', 'auto'),
+    dumpResponse: resolveBooleanOption(parsed.values['dump-response'], undefined, false)
+  })
+
+  logger.info(`Code Review 范围: ${result.rangeSpec}`)
+  process.stdout.write(`\n${result.review}\n`)
+}
+
+async function runExplainSubcommand(rawArgs) {
+  const scopedOptions = getAiCommandOptions('explain')
+  const parsed = parseArgs({
+    args: rawArgs,
+    allowPositionals: true,
+    options: {
+      base: { type: 'string' },
+      head: { type: 'string' },
+      profile: { type: 'string' },
+      'repo-mode': { type: 'string' },
+      'dump-response': { type: 'boolean' },
+      help: { type: 'boolean', short: 'h' }
+    }
+  })
+
+  if (parsed.values.help) {
+    printExplainHelp()
+    return
+  }
+
+  const result = await runAiExplainWorkflow({
     baseRef: resolveStringOption(parsed.values.base, scopedOptions.base, ''),
     headRef: resolveStringOption(parsed.values.head, scopedOptions.head, ''),
-    focus: resolveStringOption(parsed.values.focus, scopedOptions.focus, ''),
     profile: resolveStringOption(parsed.values.profile, scopedOptions.profile, ''),
     repoMode: resolveStringOption(parsed.values['repo-mode'], scopedOptions.repoMode, 'auto'),
     dumpResponse: resolveBooleanOption(parsed.values['dump-response'], scopedOptions.dumpResponse, false)
   })
 
-  logger.info(`Code Review 范围: ${result.rangeSpec}`)
-  process.stdout.write(`\n${result.review}\n`)
+  logger.info(`Explain 范围: ${result.rangeSpec}`)
+  process.stdout.write(`\n${result.explanation}\n`)
 }
 
 export async function runAiCommand(rawArgs) {
@@ -221,6 +270,11 @@ export async function runAiCommand(rawArgs) {
 
   if (subcommand === 'codereview' || subcommand === 'review') {
     await runCodeReviewSubcommand(subcommandArgs)
+    return
+  }
+
+  if (subcommand === 'explain') {
+    await runExplainSubcommand(subcommandArgs)
     return
   }
 

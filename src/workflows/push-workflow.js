@@ -360,7 +360,7 @@ export async function runPushWorkflow(inputOptions) {
     })
   }
 
-  const remoteMergeMode = inputOptions.remoteMerge !== false
+  const remoteMergeMode = inputOptions.remoteMerge === true
   let branchTargets = uniqueBranches([
     ...(inputOptions.notPushCurrent ? [] : [currentBranch]),
     ...(inputOptions.targetBranches || [])

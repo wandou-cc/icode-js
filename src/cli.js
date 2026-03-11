@@ -3,6 +3,7 @@ import { runCleanCommand } from './commands/clean.js'
 import { runCodeReviewCommand } from './commands/codereview.js'
 import { runCheckoutCommand } from './commands/checkout.js'
 import { runConfigCommand } from './commands/config.js'
+import { runExplainCommand } from './commands/explain.js'
 import { printMainHelp } from './commands/help.js'
 import { runInfoCommand } from './commands/info.js'
 import { runMigrateCommand } from './commands/migrate.js'
@@ -38,6 +39,7 @@ const COMMANDS = {
   migrate: runMigrateCommand,
   tag: runTagCommand,
   config: runConfigCommand,
+  explain: runExplainCommand,
   info: runInfoCommand,
   help: async () => {
     printMainHelp()
@@ -109,9 +111,16 @@ main().catch((error) => {
   const normalized = asIcodeError(error)
   logger.error(normalized.message)
 
-  if (normalized.code === 'AI_EMPTY_RESPONSE' && normalized.meta?.rawResponse) {
-    logger.warn('AI 原始响应如下（用于排查响应格式）:')
-    process.stderr.write(`${normalized.meta.rawResponse}\n`)
+  if (normalized.code === 'AI_EMPTY_RESPONSE') {
+    if (normalized.meta?.thinkingPreview) {
+      logger.warn('检测到模型返回了思考过程，但没有可展示的最终内容。默认不会输出思考过程。')
+    }
+    if (normalized.meta?.hint) {
+      logger.warn(normalized.meta.hint)
+    }
+    if (normalized.meta?.rawResponse) {
+      logger.warn('如需排查原始响应，请使用 `--dump-response` 或设置 `ICODE_AI_DUMP_RESPONSE=1`。')
+    }
   }
 
   if ((process.env.ICODE_DEBUG === '1' || isTruthy(process.env.ICODE_AI_DUMP_RESPONSE)) && normalized.meta && Object.keys(normalized.meta).length) {

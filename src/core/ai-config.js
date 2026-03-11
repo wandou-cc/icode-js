@@ -13,7 +13,7 @@ const DEFAULT_PROFILE = {
   requestBody: {}
 }
 
-const ALLOWED_OPTION_SCOPES = new Set(['commit', 'conflict', 'codereview', 'push'])
+const ALLOWED_OPTION_SCOPES = new Set(['commit', 'conflict', 'explain', 'push'])
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
@@ -97,19 +97,46 @@ function maskKey(value) {
 export function getAiConfig() {
   const config = ensureAiSection(readConfig())
   const activeProfile = resolveActiveProfileName(config.ai)
+  const sanitizedOptions = sanitizeAiCommandOptions(config.ai.options)
+  const activeProfileChanged = activeProfile && config.ai.activeProfile !== activeProfile
+  const optionsChanged = JSON.stringify(config.ai.options || {}) !== JSON.stringify(sanitizedOptions)
 
-  if (activeProfile && config.ai.activeProfile !== activeProfile) {
+  if (activeProfileChanged) {
     config.ai.activeProfile = activeProfile
+  }
+
+  if (optionsChanged) {
+    config.ai.options = sanitizedOptions
+  }
+
+  if (activeProfileChanged || optionsChanged) {
     writeConfig(config)
   }
 
   return config.ai
 }
 
+function sanitizeAiCommandOptions(optionsMap) {
+  const source = optionsMap && typeof optionsMap === 'object' && !Array.isArray(optionsMap) ? optionsMap : {}
+  const next = {}
+
+  Object.entries(source).forEach(([scope, value]) => {
+    if (!ALLOWED_OPTION_SCOPES.has(scope)) {
+      return
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return
+    }
+    next[scope] = clone(value)
+  })
+
+  return next
+}
+
 function normalizeOptionScope(scopeName) {
   const scope = (scopeName || '').trim().toLowerCase()
   if (!scope) {
-    throw new IcodeError('缺少 options 作用域。可选: commit|conflict|codereview|push', {
+    throw new IcodeError('缺少 options 作用域。可选: commit|conflict|explain|push', {
       code: 'AI_OPTIONS_SCOPE_EMPTY',
       exitCode: 2
     })
@@ -154,13 +181,13 @@ export function listAiProfiles() {
 
 export function listAiCommandOptions() {
   const aiConfig = getAiConfig()
-  return clone(aiConfig.options || {})
+  return sanitizeAiCommandOptions(aiConfig.options)
 }
 
 export function getAiCommandOptions(scopeName = '') {
   const aiConfig = getAiConfig()
   if (!scopeName) {
-    return clone(aiConfig.options || {})
+    return sanitizeAiCommandOptions(aiConfig.options)
   }
 
   const scope = normalizeOptionScope(scopeName)

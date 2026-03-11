@@ -70,6 +70,9 @@ test('ai-config command options set/get/remove flow', () => {
       aiCommit: true,
       aiProfile: 'local'
     })
+    upsertAiCommandOptions('explain', {
+      profile: 'local'
+    })
 
     const commitOptions = getAiCommandOptions('commit')
     assert.equal(commitOptions.profile, 'local')
@@ -85,9 +88,57 @@ test('ai-config command options set/get/remove flow', () => {
 
     const allOptions = listAiCommandOptions()
     assert.equal(allOptions.push.aiCommit, true)
+    assert.equal(allOptions.explain.profile, 'local')
 
     removeAiCommandOptions('push')
     assert.deepEqual(getAiCommandOptions('push'), {})
+  } finally {
+    delete process.env.ICODE_CONFIG_PATH
+  }
+})
+
+test('ai-config should ignore and cleanup legacy codereview options', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-options-legacy-test-'))
+  const configPath = path.join(tempRoot, 'config.json')
+  process.env.ICODE_CONFIG_PATH = configPath
+
+  try {
+    fs.writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      defaults: {
+        repoMode: 'auto',
+        defaultMainBranches: ['main', 'master']
+      },
+      ai: {
+        activeProfile: '',
+        profiles: {},
+        options: {
+          codereview: {
+            profile: 'ollama',
+            base: 'origin/main'
+          },
+          explain: {
+            profile: 'local'
+          }
+        }
+      },
+      repositories: {}
+    }, null, 2), 'utf8')
+
+    assert.deepEqual(listAiCommandOptions(), {
+      explain: {
+        profile: 'local'
+      }
+    })
+    assert.deepEqual(getAiCommandOptions(), {
+      explain: {
+        profile: 'local'
+      }
+    })
+
+    const persisted = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    assert.equal(persisted.ai.options.codereview, undefined)
+    assert.equal(persisted.ai.options.explain.profile, 'local')
   } finally {
     delete process.env.ICODE_CONFIG_PATH
   }

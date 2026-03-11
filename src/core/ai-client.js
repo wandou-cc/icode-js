@@ -53,6 +53,10 @@ function shouldDumpResponse(options = {}) {
   return isTruthy(process.env.ICODE_AI_DUMP_RESPONSE)
 }
 
+function allowThinkingFallback(options = {}) {
+  return options.allowThinkingFallback === true
+}
+
 function serializeHeaders(headers) {
   const next = {}
   if (!headers) {
@@ -138,11 +142,40 @@ function buildEndpoint(profile) {
     return `${baseUrl}/api/chat`
   }
 
+  if (baseUrl.endsWith('/responses')) {
+    return baseUrl
+  }
+
   if (baseUrl.endsWith('/chat/completions')) {
     return baseUrl
   }
 
   return `${baseUrl}/chat/completions`
+}
+
+function buildOpenAIResponsesEndpoint(profile) {
+  const baseUrl = trimSlash(profile.baseUrl || '')
+
+  if (!baseUrl) {
+    throw new IcodeError(`AI profile ${profile.name} 缺少 baseUrl`, {
+      code: 'AI_BASE_URL_EMPTY',
+      exitCode: 2
+    })
+  }
+
+  if (baseUrl.endsWith('/responses')) {
+    return baseUrl
+  }
+
+  if (baseUrl.endsWith('/chat/completions')) {
+    return `${baseUrl.slice(0, -'/chat/completions'.length)}/responses`
+  }
+
+  return `${baseUrl}/responses`
+}
+
+function isOpenAIResponsesEndpoint(endpoint = '') {
+  return endpoint.endsWith('/responses')
 }
 
 function parseContentArray(content) {
@@ -178,6 +211,26 @@ function parseOpenAIContent(payload) {
   }
 
   return (content || '').trim()
+}
+
+function parseOpenAIResponsesContent(payload) {
+  if (typeof payload?.output_text === 'string' && payload.output_text.trim()) {
+    return payload.output_text.trim()
+  }
+
+  const output = Array.isArray(payload?.output) ? payload.output : []
+  const parts = []
+
+  output.forEach((item) => {
+    const content = Array.isArray(item?.content) ? item.content : []
+    content.forEach((contentItem) => {
+      if (contentItem?.type === 'output_text' && typeof contentItem.text === 'string' && contentItem.text.trim()) {
+        parts.push(contentItem.text.trim())
+      }
+    })
+  })
+
+  return parts.join('\n').trim()
 }
 
 function parseAnthropicContent(payload) {
@@ -279,6 +332,23 @@ function parseOpenAIThinking(payload) {
   }
 
   return ''
+}
+
+function parseOpenAIResponsesThinking(payload) {
+  const summaryList = Array.isArray(payload?.reasoning?.summary) ? payload.reasoning.summary : []
+  return summaryList
+    .map((item) => {
+      if (typeof item === 'string') {
+        return item
+      }
+      if (typeof item?.text === 'string') {
+        return item.text
+      }
+      return ''
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim()
 }
 
 function parseOllamaThinking(payload) {
@@ -403,6 +473,131 @@ function parseOpenAIStreamContent(rawText) {
   }
 }
 
+function buildStreamPartKey(payload, indexField = 'content_index') {
+  const outputIndex = Number.isInteger(payload?.output_index) ? payload.output_index : 0
+  const partIndex = Number.isInteger(payload?.[indexField]) ? payload[indexField] : 0
+  return `${outputIndex}:${partIndex}`
+}
+
+function setStreamPart(parts, key, value, append = false) {
+  if (typeof value !== 'string' || !value) {
+    return
+  }
+
+  const current = parts.get(key) || ''
+  parts.set(key, append ? `${current}${value}` : value)
+}
+
+function joinStreamParts(parts) {
+  return [...parts.entries()]
+    .sort(([leftKey], [rightKey]) => {
+      const [leftOutput = 0, leftPart = 0] = leftKey.split(':').map((item) => Number(item) || 0)
+      const [rightOutput = 0, rightPart = 0] = rightKey.split(':').map((item) => Number(item) || 0)
+      if (leftOutput !== rightOutput) {
+        return leftOutput - rightOutput
+      }
+      return leftPart - rightPart
+    })
+    .map(([, value]) => value.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim()
+}
+
+function parseOpenAIResponsesStreamContent(rawText) {
+  const contentParts = new Map()
+  const thinkingParts = new Map()
+  let payloadCount = 0
+  let completedResponse = null
+
+  const lines = String(rawText || '').split(/\r?\n/)
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line.startsWith('data:')) {
+      continue
+    }
+
+    const payloadText = line.slice(5).trim()
+    if (!payloadText) {
+      continue
+    }
+
+    let payload = null
+    try {
+      payload = JSON.parse(payloadText)
+    } catch {
+      continue
+    }
+
+    payloadCount += 1
+
+    if (payload?.type === 'response.completed' && payload?.response && typeof payload.response === 'object') {
+      completedResponse = payload.response
+      continue
+    }
+
+    if (payload?.type === 'response.output_text.delta') {
+      setStreamPart(contentParts, buildStreamPartKey(payload), payload.delta, true)
+      continue
+    }
+
+    if (payload?.type === 'response.output_text.done') {
+      setStreamPart(contentParts, buildStreamPartKey(payload), payload.text)
+      continue
+    }
+
+    if (payload?.type === 'response.reasoning_summary_text.delta') {
+      setStreamPart(thinkingParts, buildStreamPartKey(payload, 'summary_index'), payload.delta, true)
+      continue
+    }
+
+    if (payload?.type === 'response.reasoning_summary_text.done') {
+      setStreamPart(thinkingParts, buildStreamPartKey(payload, 'summary_index'), payload.text)
+      continue
+    }
+
+    if (payload?.type === 'response.reasoning_text.delta') {
+      setStreamPart(thinkingParts, buildStreamPartKey(payload), payload.delta, true)
+      continue
+    }
+
+    if (payload?.type === 'response.reasoning_text.done') {
+      setStreamPart(thinkingParts, buildStreamPartKey(payload), payload.text)
+      continue
+    }
+
+    if (payload?.type === 'response.content_part.done') {
+      const part = payload.part
+      if (part?.type === 'output_text') {
+        setStreamPart(contentParts, buildStreamPartKey(payload), part.text)
+        continue
+      }
+
+      if (part?.type === 'reasoning_text') {
+        setStreamPart(thinkingParts, buildStreamPartKey(payload), part.text)
+      }
+    }
+  }
+
+  let content = joinStreamParts(contentParts)
+  let thinking = joinStreamParts(thinkingParts)
+
+  if (completedResponse) {
+    if (!content) {
+      content = parseOpenAIResponsesContent(completedResponse)
+    }
+    if (!thinking) {
+      thinking = parseOpenAIResponsesThinking(completedResponse)
+    }
+  }
+
+  return {
+    payloadCount,
+    content,
+    thinking
+  }
+}
+
 function parseOllamaStreamContent(rawText) {
   const contentParts = []
   const thinkingParts = []
@@ -457,22 +652,29 @@ function parseResponseJson(text, meta) {
   }
 }
 
-async function requestOpenAI(profile, prompt, options = {}) {
-  const apiKey = resolveApiKey(profile)
-  if (!apiKey) {
-    throw new IcodeError(`AI profile ${profile.name} 缺少 apiKey（可通过配置或环境变量设置）`, {
-      code: 'AI_API_KEY_EMPTY',
-      exitCode: 2
-    })
+function buildThinkingOnlyError(message, meta, thinkingContent = '', hint = '') {
+  return new IcodeError(message, {
+    code: 'AI_EMPTY_RESPONSE',
+    exitCode: 2,
+    meta: {
+      ...meta,
+      thinkingPreview: thinkingContent.slice(0, 400),
+      hint
+    }
+  })
+}
+
+function shouldRetryWithResponsesApi(error) {
+  if (!error || error.code !== 'AI_HTTP_ERROR') {
+    return false
   }
 
-  const endpoint = buildEndpoint(profile)
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
-    ...normalizeHeaders(profile.headers)
-  }
-  const requestBody = mergeRequestBody({
+  const rawResponse = String(error.meta?.rawResponse || '')
+  return rawResponse.includes('Unsupported legacy protocol') && rawResponse.includes('/v1/responses')
+}
+
+function buildOpenAIChatRequestBody(profile, prompt) {
+  return mergeRequestBody({
     model: profile.model,
     stream: false,
     temperature: profile.temperature,
@@ -488,8 +690,21 @@ async function requestOpenAI(profile, prompt, options = {}) {
       }
     ]
   }, profile.requestBody)
+}
 
-  const responseMeta = await withSpinner(`等待 AI(${profile.name}) 响应`, async () => {
+function buildOpenAIResponsesRequestBody(profile, prompt) {
+  return mergeRequestBody({
+    model: profile.model,
+    stream: false,
+    temperature: profile.temperature,
+    max_output_tokens: profile.maxTokens,
+    instructions: prompt.systemPrompt,
+    input: prompt.userPrompt
+  }, profile.requestBody)
+}
+
+async function performJsonRequest({ endpoint, profile, headers, requestBody, options }) {
+  return withSpinner(`等待响应`, async () => {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
@@ -530,48 +745,125 @@ async function requestOpenAI(profile, prompt, options = {}) {
       text: responseText
     }
   })
+}
 
-  if (requestBody.stream === true) {
-    const streamResult = parseOpenAIStreamContent(responseMeta.text)
-    if (streamResult.payloadCount > 0) {
-      if (streamResult.content) {
-        return streamResult.content
-      }
-      if (streamResult.thinking) {
-        return streamResult.thinking
-      }
-    }
-  }
-
-  const payload = parseResponseJson(responseMeta.text, {
+function parseOpenAIPayload(responseMeta, profile, endpoint) {
+  return parseResponseJson(responseMeta.text, {
     status: responseMeta.status,
     endpoint,
     profile: profile.name,
     format: profile.format,
     responseHeaders: responseMeta.responseHeaders
   })
-  const parsedContent = parseOpenAIContent(payload)
+}
+
+function resolveOpenAITextFromPayload(payload, responseMeta, profile, endpoint, options) {
+  const parsedContent = isOpenAIResponsesEndpoint(endpoint)
+    ? parseOpenAIResponsesContent(payload)
+    : parseOpenAIContent(payload)
   if (parsedContent) {
     return parsedContent
   }
 
-  const thinkingContent = parseOpenAIThinking(payload)
-  if (thinkingContent) {
+  const thinkingContent = isOpenAIResponsesEndpoint(endpoint)
+    ? parseOpenAIResponsesThinking(payload)
+    : parseOpenAIThinking(payload)
+  if (thinkingContent && allowThinkingFallback(options)) {
     return thinkingContent
   }
 
-  throw new IcodeError('AI 返回内容为空。当前响应可能只有思考过程，可尝试在 profile.requestBody 中设置 {"thinking":{"type":"disabled"},"stream":false}。', {
-    code: 'AI_EMPTY_RESPONSE',
-    exitCode: 2,
-    meta: {
+  throw buildThinkingOnlyError(
+    'AI 返回正文为空。当前响应可能只有思考过程，默认不会把 reasoning/thinking 当成最终内容输出。',
+    {
       endpoint,
       profile: profile.name,
       status: responseMeta.status,
       responseHeaders: responseMeta.responseHeaders,
-      rawResponse: responseMeta.text,
-      thinkingPreview: thinkingContent.slice(0, 400)
+      rawResponse: responseMeta.text
+    },
+    thinkingContent,
+    isOpenAIResponsesEndpoint(endpoint)
+      ? '可在 profile.requestBody 中设置 {"reasoning":{"summary":"none"},"stream":false}，或切换支持文本输出的模型。'
+      : '可在 profile.requestBody 中设置 {"thinking":{"type":"disabled"},"stream":false}，或切换不带思考输出的模型。'
+  )
+}
+
+async function requestOpenAI(profile, prompt, options = {}) {
+  const apiKey = resolveApiKey(profile)
+  if (!apiKey) {
+    throw new IcodeError(`AI profile ${profile.name} 缺少 apiKey（可通过配置或环境变量设置）`, {
+      code: 'AI_API_KEY_EMPTY',
+      exitCode: 2
+    })
+  }
+
+  const endpoint = buildEndpoint(profile)
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+    ...normalizeHeaders(profile.headers)
+  }
+  let resolvedEndpoint = endpoint
+  let requestBody = isOpenAIResponsesEndpoint(resolvedEndpoint)
+    ? buildOpenAIResponsesRequestBody(profile, prompt)
+    : buildOpenAIChatRequestBody(profile, prompt)
+  let responseMeta = null
+
+  try {
+    responseMeta = await performJsonRequest({
+      endpoint: resolvedEndpoint,
+      profile,
+      headers,
+      requestBody,
+      options
+    })
+  } catch (error) {
+    if (!isOpenAIResponsesEndpoint(resolvedEndpoint) && shouldRetryWithResponsesApi(error)) {
+      resolvedEndpoint = buildOpenAIResponsesEndpoint(profile)
+      requestBody = buildOpenAIResponsesRequestBody(profile, prompt)
+      responseMeta = await performJsonRequest({
+        endpoint: resolvedEndpoint,
+        profile,
+        headers,
+        requestBody,
+        options
+      })
+    } else {
+      throw error
     }
-  })
+  }
+
+  if (requestBody.stream === true) {
+    const streamResult = isOpenAIResponsesEndpoint(resolvedEndpoint)
+      ? parseOpenAIResponsesStreamContent(responseMeta.text)
+      : parseOpenAIStreamContent(responseMeta.text)
+    if (streamResult.payloadCount > 0) {
+      if (streamResult.content) {
+        return streamResult.content
+      }
+      if (streamResult.thinking && allowThinkingFallback(options)) {
+        return streamResult.thinking
+      }
+
+      throw buildThinkingOnlyError(
+        'AI 返回正文为空，检测到 reasoning/thinking。为避免暴露思考过程，默认不会把它当成最终内容输出。',
+        {
+          endpoint: resolvedEndpoint,
+          profile: profile.name,
+          status: responseMeta.status,
+          responseHeaders: responseMeta.responseHeaders,
+          rawResponse: responseMeta.text
+        },
+        streamResult.thinking,
+        isOpenAIResponsesEndpoint(resolvedEndpoint)
+          ? '可在 profile.requestBody 中设置 {"reasoning":{"summary":"none"},"stream":false} 后重试。'
+          : '可在 profile.requestBody 中设置 {"thinking":{"type":"disabled"},"stream":false} 后重试。'
+      )
+    }
+  }
+
+  const payload = parseOpenAIPayload(responseMeta, profile, resolvedEndpoint)
+  return resolveOpenAITextFromPayload(payload, responseMeta, profile, resolvedEndpoint, options)
 }
 
 async function requestAnthropic(profile, prompt, options = {}) {
@@ -607,7 +899,7 @@ async function requestAnthropic(profile, prompt, options = {}) {
     ]
   }, profile.requestBody)
 
-  const responseMeta = await withSpinner(`等待 AI(${profile.name}) 响应`, async () => {
+  const responseMeta = await withSpinner(`等待响应`, async () => {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
@@ -706,7 +998,7 @@ async function requestOllama(profile, prompt, options = {}) {
     }
   }, profile.requestBody)
 
-  const responseMeta = await withSpinner(`等待 AI(${profile.name}) 响应`, async () => {
+  const responseMeta = await withSpinner(`等待响应`, async () => {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
@@ -754,9 +1046,22 @@ async function requestOllama(profile, prompt, options = {}) {
       if (streamResult.content) {
         return streamResult.content
       }
-      if (streamResult.thinking) {
+      if (streamResult.thinking && allowThinkingFallback(options)) {
         return streamResult.thinking
       }
+
+      throw buildThinkingOnlyError(
+        'AI 返回正文为空，检测到 thinking/reasoning。为避免暴露思考过程，默认不会把它当成最终内容输出。',
+        {
+          endpoint,
+          profile: profile.name,
+          status: responseMeta.status,
+          responseHeaders: responseMeta.responseHeaders,
+          rawResponse: responseMeta.text
+        },
+        streamResult.thinking,
+        '可在 profile.requestBody 中设置 {"think":false,"stream":false} 后重试。'
+      )
     }
   }
 
@@ -773,25 +1078,24 @@ async function requestOllama(profile, prompt, options = {}) {
   }
 
   const thinkingContent = parseOllamaThinking(payload)
-  if (thinkingContent) {
+  if (thinkingContent && allowThinkingFallback(options)) {
     return thinkingContent
   }
 
-  throw new IcodeError('Ollama 返回内容为空，请检查模型可用性或更换 profile/model 后重试。', {
-    code: 'AI_EMPTY_RESPONSE',
-    exitCode: 2,
-    meta: {
+  throw buildThinkingOnlyError(
+    'Ollama 返回正文为空。当前响应可能只有思考过程，默认不会把 thinking/reasoning 当成最终内容输出。',
+    {
       endpoint,
       profile: profile.name,
       status: responseMeta.status,
       responseHeaders: responseMeta.responseHeaders,
       payloadKeys: Object.keys(payload || {}),
       doneReason: payload?.done_reason || payload?.choices?.[0]?.finish_reason || '',
-      rawResponse: responseMeta.text,
-      thinkingPreview: thinkingContent.slice(0, 400),
-      hint: '若模型仅返回思考内容，可在 profile.requestBody 中设置 {"think":false,"stream":false} 或切换不带思考的模型。'
-    }
-  })
+      rawResponse: responseMeta.text
+    },
+    thinkingContent,
+    '若模型仅返回思考内容，可在 profile.requestBody 中设置 {"think":false,"stream":false}，或切换不带思考的模型。'
+  )
 }
 
 export async function askAi(prompt, options = {}) {
@@ -815,7 +1119,10 @@ export async function askAi(prompt, options = {}) {
 }
 
 export async function askAiJson(prompt, options = {}) {
-  const text = await askAi(prompt, options)
+  const text = await askAi(prompt, {
+    ...options,
+    allowThinkingFallback: options.allowThinkingFallback !== false
+  })
   const parsed = parseJsonWithFallback(text)
   if (!parsed) {
     throw new IcodeError('AI 返回结果不是合法 JSON，请调整模型提示词或重试。', {

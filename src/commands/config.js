@@ -166,14 +166,13 @@ Common options:
   -h, --help                查看帮助
 
 Available scope:
-  commit | conflict | codereview | push
+  commit | conflict | explain | push
 
 Examples:
   icode config ai options list
   icode config ai options show commit
   icode config ai options set commit --json '{"profile":"local","lang":"zh","yes":true}'
-  icode config ai options set codereview --json '{"profile":"local","base":"origin/main"}'
-  icode config ai options set codereview --json '{"profile":"ollama","dumpResponse":true}'
+  icode config ai options set explain --json '{"profile":"local","base":"origin/main"}'
   icode config ai options set push --json '{"aiProfile":"local","aiCommitLang":"zh"}'
   icode config ai options remove push
 `)

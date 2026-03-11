@@ -1,5 +1,4 @@
 import { parseArgs } from 'node:util'
-import { getAiCommandOptions } from '../core/ai-config.js'
 import { logger } from '../core/logger.js'
 import { runAiCodeReviewWorkflow } from '../workflows/ai-codereview-workflow.js'
 
@@ -9,8 +8,8 @@ Usage:
   icode codereview [options]
 
 Options:
-  --base <ref>            diff 基线，默认 origin/<defaultBranch>
-  --head <ref>            diff 终点，默认 HEAD
+  --base <ref>            指定分支 diff 基线；未传时默认评审暂存区 + 工作区改动
+  --head <ref>            指定分支 diff 终点，默认 HEAD
   --focus <text>          评审重点（安全/性能/测试等）
   --profile <name>        指定 AI profile
   --repo-mode <mode>      仓库模式: auto(自动继承父仓库) | strict(禁止继承)
@@ -19,37 +18,7 @@ Options:
 `)
 }
 
-function resolveBooleanOption(cliValue, configValue, fallback = false) {
-  if (typeof cliValue === 'boolean') {
-    return cliValue
-  }
-  if (typeof configValue === 'boolean') {
-    return configValue
-  }
-  if (typeof configValue === 'string') {
-    const normalized = configValue.trim().toLowerCase()
-    if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
-      return true
-    }
-    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) {
-      return false
-    }
-  }
-  return fallback
-}
-
-function resolveStringOption(cliValue, configValue, fallback = '') {
-  if (typeof cliValue === 'string' && cliValue.trim()) {
-    return cliValue
-  }
-  if (typeof configValue === 'string' && configValue.trim()) {
-    return configValue
-  }
-  return fallback
-}
-
 export async function runCodeReviewCommand(rawArgs) {
-  const scopedOptions = getAiCommandOptions('codereview')
   const parsed = parseArgs({
     args: rawArgs,
     allowPositionals: true,
@@ -70,12 +39,12 @@ export async function runCodeReviewCommand(rawArgs) {
   }
 
   const result = await runAiCodeReviewWorkflow({
-    baseRef: resolveStringOption(parsed.values.base, scopedOptions.base, ''),
-    headRef: resolveStringOption(parsed.values.head, scopedOptions.head, ''),
-    focus: resolveStringOption(parsed.values.focus, scopedOptions.focus, ''),
-    profile: resolveStringOption(parsed.values.profile, scopedOptions.profile, ''),
-    repoMode: resolveStringOption(parsed.values['repo-mode'], scopedOptions.repoMode, 'auto'),
-    dumpResponse: resolveBooleanOption(parsed.values['dump-response'], scopedOptions.dumpResponse, false)
+    baseRef: typeof parsed.values.base === 'string' ? parsed.values.base : '',
+    headRef: typeof parsed.values.head === 'string' ? parsed.values.head : '',
+    focus: typeof parsed.values.focus === 'string' ? parsed.values.focus : '',
+    profile: typeof parsed.values.profile === 'string' ? parsed.values.profile : '',
+    repoMode: typeof parsed.values['repo-mode'] === 'string' ? parsed.values['repo-mode'] : 'auto',
+    dumpResponse: parsed.values['dump-response'] === true
   })
 
   logger.info(`Code Review 范围: ${result.rangeSpec}`)
