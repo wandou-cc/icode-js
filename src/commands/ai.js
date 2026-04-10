@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util'
 import { normalizeLegacyArgs } from '../core/args.js'
 import { getAiCommandOptions } from '../core/ai-config.js'
+import { formatAiCommitSummary } from '../core/ai-commit-summary.js'
 import { IcodeError } from '../core/errors.js'
 import { logger } from '../core/logger.js'
 import { runAiCodeReviewWorkflow } from '../workflows/ai-codereview-workflow.js'
@@ -118,6 +119,7 @@ function resolveStringOption(cliValue, configValue, fallback = '') {
   return fallback
 }
 
+// Execute `icode ai commit` and surface the full applied commit message in logs.
 async function runCommitSubcommand(rawArgs) {
   const scopedOptions = getAiCommandOptions('commit')
   const parsed = parseArgs({
@@ -153,7 +155,7 @@ async function runCommitSubcommand(rawArgs) {
   }
 
   if (result.applied) {
-    logger.success(`AI commit 已应用: ${result.commitMessage.split('\n')[0]}`)
+    logger.success(`AI commit 已应用:\n${formatAiCommitSummary(result.commitId, result.commitMessage)}`)
   }
 }
 

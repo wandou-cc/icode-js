@@ -5,6 +5,17 @@ function stringifyCommand(command, args) {
   return [command, ...args].join(' ')
 }
 
+function formatFailureMessage(command, args, result) {
+  const baseMessage = `命令执行失败(${result.exitCode}): ${stringifyCommand(command, args)}`
+  const detailLines = [result.stderr, result.stdout].map((item) => item.trim()).filter(Boolean)
+
+  if (!detailLines.length) {
+    return baseMessage
+  }
+
+  return `${baseMessage}\n${detailLines.join('\n')}`
+}
+
 export async function runCommand(command, args = [], options = {}) {
   const { cwd = process.cwd(), env = process.env, allowFailure = false } = options
 
@@ -56,7 +67,7 @@ export async function runCommand(command, args = [], options = {}) {
       }
 
       reject(
-        new IcodeError(`命令执行失败(${exitCode}): ${stringifyCommand(command, args)}`, {
+        new IcodeError(formatFailureMessage(command, args, result), {
           code: 'COMMAND_EXEC_ERROR',
           meta: result
         })

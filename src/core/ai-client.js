@@ -98,6 +98,53 @@ function printResponseDump(meta) {
   process.stderr.write(`[icode] AI 原始响应:\n${JSON.stringify(payload, null, 2)}\n`)
 }
 
+function collectFetchErrorLines(error) {
+  const lines = []
+  const message = typeof error?.message === 'string' ? error.message.trim() : ''
+  if (message) {
+    lines.push(message)
+  }
+
+  const cause = error?.cause
+  if (cause && typeof cause === 'object') {
+    const causeParts = []
+    const causeCode = typeof cause.code === 'string' ? cause.code.trim() : ''
+    const causeMessage = typeof cause.message === 'string' ? cause.message.trim() : ''
+
+    if (causeCode) {
+      causeParts.push(causeCode)
+    }
+    if (causeMessage) {
+      causeParts.push(causeMessage)
+    }
+
+    const causeLine = causeParts.join(': ')
+    if (causeLine && !lines.includes(causeLine)) {
+      lines.push(causeLine)
+    }
+  }
+
+  return lines
+}
+
+function buildFetchRequestError(profile, endpoint, error) {
+  const detailLines = collectFetchErrorLines(error)
+  const detailBlock = detailLines.length ? `\n${detailLines.join('\n')}` : ''
+
+  return new IcodeError(`AI 请求异常(${profile.format}/${profile.name}): ${endpoint}${detailBlock}`, {
+    code: 'AI_FETCH_ERROR',
+    exitCode: 2,
+    cause: error,
+    meta: {
+      endpoint,
+      profile: profile.name,
+      format: profile.format,
+      causeMessage: error?.message || '',
+      causeCode: error?.cause?.code || error?.code || ''
+    }
+  })
+}
+
 function resolveApiKey(profile) {
   if (profile.apiKey) {
     return profile.apiKey
@@ -705,11 +752,16 @@ function buildOpenAIResponsesRequestBody(profile, prompt) {
 
 async function performJsonRequest({ endpoint, profile, headers, requestBody, options }) {
   return withSpinner(`等待响应`, async () => {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody)
-    })
+    let response = null
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody)
+      })
+    } catch (error) {
+      throw buildFetchRequestError(profile, endpoint, error)
+    }
 
     const responseText = await response.text()
     const responseHeaders = serializeHeaders(response.headers)
@@ -899,46 +951,12 @@ async function requestAnthropic(profile, prompt, options = {}) {
     ]
   }, profile.requestBody)
 
-  const responseMeta = await withSpinner(`等待响应`, async () => {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody)
-    })
-
-    const responseText = await response.text()
-    const responseHeaders = serializeHeaders(response.headers)
-    if (shouldDumpResponse(options)) {
-      printResponseDump({
-        profile: profile.name,
-        format: profile.format,
-        endpoint,
-        status: response.status,
-        responseHeaders,
-        responseText
-      })
-    }
-
-    if (!response.ok) {
-      throw new IcodeError(`AI 请求失败(${response.status}): ${responseText}`, {
-        code: 'AI_HTTP_ERROR',
-        exitCode: 2,
-        meta: {
-          status: response.status,
-          endpoint,
-          profile: profile.name,
-          format: profile.format,
-          responseHeaders,
-          rawResponse: responseText
-        }
-      })
-    }
-
-    return {
-      status: response.status,
-      responseHeaders,
-      text: responseText
-    }
+  const responseMeta = await performJsonRequest({
+    endpoint,
+    profile,
+    headers,
+    requestBody,
+    options
   })
 
   const payload = parseResponseJson(responseMeta.text, {
@@ -998,46 +1016,12 @@ async function requestOllama(profile, prompt, options = {}) {
     }
   }, profile.requestBody)
 
-  const responseMeta = await withSpinner(`等待响应`, async () => {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody)
-    })
-
-    const responseText = await response.text()
-    const responseHeaders = serializeHeaders(response.headers)
-    if (shouldDumpResponse(options)) {
-      printResponseDump({
-        profile: profile.name,
-        format: profile.format,
-        endpoint,
-        status: response.status,
-        responseHeaders,
-        responseText
-      })
-    }
-
-    if (!response.ok) {
-      throw new IcodeError(`AI 请求失败(${response.status}): ${responseText}`, {
-        code: 'AI_HTTP_ERROR',
-        exitCode: 2,
-        meta: {
-          status: response.status,
-          endpoint,
-          profile: profile.name,
-          format: profile.format,
-          responseHeaders,
-          rawResponse: responseText
-        }
-      })
-    }
-
-    return {
-      status: response.status,
-      responseHeaders,
-      text: responseText
-    }
+  const responseMeta = await performJsonRequest({
+    endpoint,
+    profile,
+    headers,
+    requestBody,
+    options
   })
 
   if (requestBody.stream === true) {

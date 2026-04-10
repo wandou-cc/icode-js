@@ -30,7 +30,7 @@ icode config ai list
 
 ## AI 能力配置
 
-先配置一个 AI profile（支持 OpenAI/Anthropic/Ollama 三种接口格式）：
+先配置一个 AI profile（支持 OpenAI/Anthropic/Ollama/lingma 四种接口格式）：
 
 ```bash
 icode config ai set openai \

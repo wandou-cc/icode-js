@@ -2,6 +2,7 @@ import { getRepoPolicy } from '../core/config-store.js'
 import { IcodeError } from '../core/errors.js'
 import { GitService } from '../core/git-service.js'
 import { resolveGitContext } from '../core/git-context.js'
+import { formatAiCommitSummary } from '../core/ai-commit-summary.js'
 import { logger } from '../core/logger.js'
 import { confirm, input } from '../core/prompts.js'
 import { runAiCommitWorkflow } from './ai-commit-workflow.js'
@@ -47,14 +48,7 @@ function buildTemporaryRebaseBranchName(sourceBranch, targetBranch) {
   return `icode-tmp-rebase-${sanitizeBranchName(sourceBranch)}-to-${sanitizeBranchName(targetBranch)}-${Date.now()}`
 }
 
-function formatAiCommitResult(result) {
-  const header = result.commitMessage?.split('\n')[0] || '无标题'
-  if (result.commitId) {
-    return `${result.commitId} ${header}`
-  }
-  return header
-}
-
+// Run AI commit before push and keep the full generated message in follow-up logs.
 async function prepareAiCommitIfEnabled(inputOptions) {
   if (!inputOptions.aiCommit) {
     return {
@@ -86,7 +80,7 @@ async function prepareAiCommitIfEnabled(inputOptions) {
       }
     }
 
-    logger.success(`AI 自动提交完成: ${formatAiCommitResult(result)}`)
+    logger.success(`AI 自动提交完成:\n${formatAiCommitSummary(result.commitId, result.commitMessage)}`)
     return {
       enabled: true,
       applied: true,

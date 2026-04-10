@@ -6,6 +6,55 @@ import test from 'node:test'
 import { askAi, askAiJson } from '../src/core/ai-client.js'
 import { upsertAiProfile, useAiProfile } from '../src/core/ai-config.js'
 
+test('ai-client wraps network fetch failures with profile and endpoint context', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-client-test-'))
+  process.env.ICODE_CONFIG_PATH = path.join(tempRoot, 'config.json')
+
+  const originalFetch = global.fetch
+
+  try {
+    upsertAiProfile('ollama-fetch-error', {
+      provider: 'ollama',
+      format: 'ollama',
+      baseUrl: 'http://127.0.0.1:11434',
+      model: 'qwen2.5:7b'
+    })
+    useAiProfile('ollama-fetch-error')
+
+    global.fetch = async () => {
+      const cause = new Error('connect ECONNREFUSED 127.0.0.1:11434')
+      cause.code = 'ECONNREFUSED'
+      const error = new TypeError('fetch failed')
+      error.cause = cause
+      throw error
+    }
+
+    await assert.rejects(
+      () =>
+        askAi(
+          {
+            systemPrompt: 'system',
+            userPrompt: 'user'
+          },
+          {
+            profile: 'ollama-fetch-error'
+          }
+        ),
+      (error) => {
+        assert.equal(error.code, 'AI_FETCH_ERROR')
+        assert.match(error.message, /ollama-fetch-error/)
+        assert.match(error.message, /http:\/\/127\.0\.0\.1:11434\/api\/chat/)
+        assert.match(error.message, /fetch failed/)
+        assert.match(error.message, /ECONNREFUSED/)
+        return true
+      }
+    )
+  } finally {
+    global.fetch = originalFetch
+    delete process.env.ICODE_CONFIG_PATH
+  }
+})
+
 test('ai-client supports ollama format without api key', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-client-test-'))
   process.env.ICODE_CONFIG_PATH = path.join(tempRoot, 'config.json')

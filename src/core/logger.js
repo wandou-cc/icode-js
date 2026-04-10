@@ -13,8 +13,15 @@ function colorize(color, message) {
   return `${COLORS[color] || ''}${message}${COLORS.reset}`
 }
 
+// Prefix every rendered line so multiline logs keep the same visible marker.
 function print(stream, level, message) {
-  stream.write(`${level}${message}\n`)
+  const normalizedMessage = String(message ?? '')
+  const formattedMessage = normalizedMessage
+    .split('\n')
+    .map((line) => `${level}${line}`)
+    .join('\n')
+
+  stream.write(`${formattedMessage}\n`)
 }
 
 export const logger = {
