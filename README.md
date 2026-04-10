@@ -1,8 +1,8 @@
-# icode-js v3
+# @icode-js/icode v3
 
-`icode-js` 是一个面向 Git 日常操作的命令行工具。
+`@icode-js/icode` 是一个面向 Git 日常操作的命令行工具，安装后可直接使用 `icode` 命令。
 
-这次版本是重写级重构，不复用旧的 `lerna + packages/*` 逻辑，目标是：
+目标：
 
 - 更稳定地处理复杂 Git 场景
 - 更好支持 `husky/git hooks` 校验链路
@@ -12,7 +12,7 @@
 ## 安装
 
 ```bash
-npm i -g icode-js
+npm i -g @icode-js/icode
 ```
 
 ## 快速开始
@@ -127,7 +127,7 @@ icode push release test -m "feat: batch publish" -y # 默认本地 merge 推送�
 - `[targetBranch...]`：目标分支列表（可多个，空则默认当前分支）
 - `-m, --message <msg>`：提交信息（未填会提示输入）
 - `-y, --yes`：自动确认（跳过确认提示）
-- `--local-merge`：使用本地 merge 模式（默认，会切换分支并生成 merge commit）
+- `--local-merge`：显式声明使用本地 merge 模式（当前为默认行为，会切换分支并生成 merge commit）
 - `--ai-commit`：push 前自动执行 AI commit
 - `--ai-profile <name>`：指定 AI profile（用于 `--ai-commit`）
 - `--pull-main`：提交前同步主分支到当前分支
@@ -339,8 +339,16 @@ node bin/icode.js help
 node bin/icode.js undo
 ```
 
-## 迁移说明（v2 -> v3）
+## 发布
 
-- 移除了旧版远程平台 API 合并流程（GitHub/GitLab/Gitee Token 管理）
-- 统一聚焦本地 Git 工作流自动化
-- 部分旧参数仍做兼容映射（如 `-pm`）
+当前 npm 包名：
+
+```bash
+@icode-js/icode
+```
+
+首次发布 scoped 包请显式指定公开访问权限：
+
+```bash
+npm publish --access public
+```
