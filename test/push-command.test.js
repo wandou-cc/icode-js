@@ -16,8 +16,6 @@ test('push options only enable boolean flags when passed on CLI', () => {
       forceProtected: true,
       repoMode: 'strict',
       noVerify: true,
-      localMerge: true,
-      origin: false,
       aiProfile: 'ollama',
       aiCommitLang: 'en'
     }
@@ -27,7 +25,6 @@ test('push options only enable boolean flags when passed on CLI', () => {
     targetBranches: ['dev', 'test'],
     message: 'fix: test',
     yes: false,
-    remoteMerge: false,
     aiCommit: false,
     aiCommitLang: 'en',
     aiProfile: 'ollama',
@@ -64,7 +61,6 @@ test('push options respect explicit CLI flags', () => {
     targetBranches: ['release'],
     message: 'fix: test',
     yes: true,
-    remoteMerge: false,
     aiCommit: true,
     aiCommitLang: 'en',
     aiProfile: 'custom-profile',
@@ -74,16 +70,4 @@ test('push options respect explicit CLI flags', () => {
     repoMode: 'strict',
     noVerify: true
   })
-})
-
-test('push options keep local-merge higher priority than origin when both are set', () => {
-  const options = resolvePushWorkflowOptions(
-    {
-      origin: true,
-      'local-merge': true
-    },
-    []
-  )
-
-  assert.equal(options.remoteMerge, false)
 })

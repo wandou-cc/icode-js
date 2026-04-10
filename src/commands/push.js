@@ -8,14 +8,8 @@ function formatBranchStatus(status) {
   const map = {
     pushed: '已推送',
     'merged-and-pushed': '已合并并推送',
-    'remote-merged': '已远程合并',
-    'remote-rebased-and-pushed': '已 rebase 后推送',
     'skipped-protected': '已跳过(受保护)',
-    'skipped-missing-remote': '已跳过(远程分支不存在)',
-    'remote-merge-rejected': '远程合并被拒绝',
-    'remote-merge-denied': '远程合并无权限',
-    'remote-merge-failed': '远程合并失败',
-    'remote-rebase-conflicted': 'rebase 冲突，未推送'
+    'skipped-missing-remote': '已跳过(远程分支不存在)'
   }
 
   return map[status] || status
@@ -32,7 +26,6 @@ Arguments:
 Options:
   -m, --message <msg>         提交信息（未填会提示输入）
   -y, --yes                   自动确认（跳过确认提示）
-  -o, --origin                使用远程 rebase 推送模式
   --local-merge               使用本地 merge 模式（默认，会切换分支并生成 merge commit）
   --ai-commit                 push 前自动执行 AI commit（会参考本地 hook/commitlint 规范）
   --ai-profile <name>         指定 AI profile（用于 --ai-commit）
@@ -44,7 +37,7 @@ Options:
   -h, --help                  查看帮助
 
 Notes:
-  默认使用本地 merge 模式；传入 --origin 才启用远程 rebase 推送模式。
+  默认使用本地 merge 模式。
   未指定 target 时默认处理当前分支。
   布尔开关仅在命令行显式传入时生效（如 --ai-commit / --pull-main / --no-verify / -y）。
 `)
@@ -76,43 +69,12 @@ function resolveStringOption(cliValue, configValue, fallback = '') {
   return fallback
 }
 
-function parseOptionalBoolean(value) {
-  if (typeof value === 'boolean') {
-    return value
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase()
-    if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
-      return true
-    }
-    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) {
-      return false
-    }
-  }
-  return undefined
-}
-
-function resolveRemoteMergeMode(cliValues) {
-  const cliLocalMerge = parseOptionalBoolean(cliValues['local-merge'])
-  if (cliLocalMerge === true) {
-    return false
-  }
-
-  const cliOrigin = parseOptionalBoolean(cliValues.origin)
-  if (cliOrigin === true) {
-    return true
-  }
-
-  return false
-}
-
 export function resolvePushWorkflowOptions(parsedValues, parsedPositionals, scopedOptions = {}) {
   return {
     targetBranches: parsedPositionals,
     message: parsedValues.message,
     // 显式传入开关才生效，避免配置项隐式开启 push 行为。
     yes: resolveBooleanOption(parsedValues.yes, false),
-    remoteMerge: resolveRemoteMergeMode(parsedValues),
     aiCommit: resolveBooleanOption(parsedValues['ai-commit'], false),
     aiCommitLang: resolveStringOption(undefined, scopedOptions.aiCommitLang, 'zh'),
     aiProfile: resolveStringOption(parsedValues['ai-profile'], scopedOptions.aiProfile, ''),
@@ -133,7 +95,6 @@ export async function runPushCommand(rawArgs) {
     options: {
       message: { type: 'string', short: 'm' },
       yes: { type: 'boolean', short: 'y' },
-      origin: { type: 'boolean', short: 'o' },
       'local-merge': { type: 'boolean' },
       'ai-commit': { type: 'boolean' },
       'ai-profile': { type: 'string' },

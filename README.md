@@ -30,7 +30,7 @@ icode config ai list
 
 ## AI 能力配置
 
-先配置一个 AI profile（支持 OpenAI/Anthropic/Ollama/lingma 四种接口格式）：
+先配置一个 AI profile（支持 OpenAI/Anthropic/Ollama 四种接口格式）：
 
 ```bash
 icode config ai set openai \
@@ -113,7 +113,6 @@ icode push [targetBranch...] [-m "commit message"] [--ai-commit] [--pull-main] [
 ```bash
 icode push -m "feat: release" # 提交并推送当前分支
 icode push release test -m "feat: batch publish" -y # 默认本地 merge 推送到多个分支
-icode push release test -m "feat: remote rebase" --origin -y # 显式使用远程 rebase 模式
 ```
 
 - 自动 `add + commit + push`
@@ -121,7 +120,6 @@ icode push release test -m "feat: remote rebase" --origin -y # 显式使用远�
 - 若仓库存在 husky/hooks/commitlint 规则，AI commit 会先扫描本地规范再生成提交信息
 - 支持把当前分支合并到多个目标分支
 - 默认使用本地 merge 模式（会生成 merge commit）
-- 可通过 `--origin` 切换为远程 rebase 推送模式（`source:target`）；遇到 `non-fast-forward` 时会自动 `fetch` 并尝试临时 `rebase` 后再推送目标分支
 - 支持受保护分支策略（通过 `icode config protect ...` 管理）
 
 参数说明：
@@ -129,7 +127,6 @@ icode push release test -m "feat: remote rebase" --origin -y # 显式使用远�
 - `[targetBranch...]`：目标分支列表（可多个，空则默认当前分支）
 - `-m, --message <msg>`：提交信息（未填会提示输入）
 - `-y, --yes`：自动确认（跳过确认提示）
-- `-o, --origin`：使用远程 rebase 推送模式
 - `--local-merge`：使用本地 merge 模式（默认，会切换分支并生成 merge commit）
 - `--ai-commit`：push 前自动执行 AI commit
 - `--ai-profile <name>`：指定 AI profile（用于 `--ai-commit`）

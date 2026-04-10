@@ -11,43 +11,6 @@ function uniqueBranches(branches) {
   return [...new Set(branches.map((item) => item.trim()).filter(Boolean))]
 }
 
-function readCommandErrorOutput(error) {
-  return `${error?.meta?.stderr || ''}\n${error?.meta?.stdout || ''}\n${error?.message || ''}`
-}
-
-function classifyRemoteMergeFailure(error) {
-  const output = readCommandErrorOutput(error)
-
-  if (/non-fast-forward|fetch first|rejected/i.test(output)) {
-    return 'remote-merge-rejected'
-  }
-
-  if (/protected branch|permission denied|not allowed|insufficient/i.test(output)) {
-    return 'remote-merge-denied'
-  }
-
-  return 'remote-merge-failed'
-}
-
-function classifyRemoteRebaseFailure(error) {
-  const output = readCommandErrorOutput(error)
-
-  if (/CONFLICT \(|could not apply|resolve all conflicts|fix conflicts/i.test(output)) {
-    return 'remote-rebase-conflicted'
-  }
-
-  return classifyRemoteMergeFailure(error)
-}
-
-function sanitizeBranchName(branchName) {
-  const sanitized = branchName.trim().replace(/[^0-9A-Za-z._-]+/g, '-').replace(/^-+|-+$/g, '')
-  return sanitized || 'branch'
-}
-
-function buildTemporaryRebaseBranchName(sourceBranch, targetBranch) {
-  return `icode-tmp-rebase-${sanitizeBranchName(sourceBranch)}-to-${sanitizeBranchName(targetBranch)}-${Date.now()}`
-}
-
 // Run AI commit before push and keep the full generated message in follow-up logs.
 async function prepareAiCommitIfEnabled(inputOptions) {
   if (!inputOptions.aiCommit) {
@@ -159,153 +122,6 @@ async function checkoutTargetBranch(git, targetBranch, sourceBranch) {
   }
 }
 
-async function cleanupTemporaryRebaseBranch(git, tempBranch, originalBranch) {
-  const branchAfterAttempt = await git.getCurrentBranch()
-
-  if (branchAfterAttempt === tempBranch) {
-    try {
-      await git.checkout(originalBranch)
-    } catch (error) {
-      logger.warn(`未能自动切回原分支 ${originalBranch}: ${error.message}`)
-      return
-    }
-  }
-
-  if (await git.branchExistsLocal(tempBranch)) {
-    try {
-      await git.deleteLocalBranch(tempBranch, { force: true })
-    } catch (error) {
-      logger.warn(`未能自动清理临时分支 ${tempBranch}: ${error.message}`)
-    }
-  }
-}
-
-async function pushTargetByRebaseFallback({
-  git,
-  currentBranch,
-  targetBranch,
-  inputOptions
-}) {
-  const tempBranch = buildTemporaryRebaseBranchName(currentBranch, targetBranch)
-
-  try {
-    logger.info(`检测到 non-fast-forward，先 fetch 再临时 rebase: origin/${targetBranch}`)
-    await git.fetch()
-
-    logger.info(`创建临时分支: ${tempBranch}`)
-    await git.checkoutNewBranch(tempBranch, currentBranch)
-
-    logger.info(`执行 rebase: ${tempBranch} onto origin/${targetBranch}`)
-    await git.rebase(`origin/${targetBranch}`)
-
-    logger.info(`rebase 成功，推送目标分支: HEAD -> ${targetBranch}`)
-    await git.pushRefspec('HEAD', targetBranch, {
-      noVerify: inputOptions.noVerify
-    })
-
-    logger.success(`rebase 后推送成功: ${currentBranch} -> ${targetBranch}`)
-    return 'remote-rebased-and-pushed'
-  } catch (error) {
-    const status = classifyRemoteRebaseFailure(error)
-
-    if (status === 'remote-rebase-conflicted') {
-      logger.warn(`rebase 出现冲突，已停止推送 ${currentBranch} -> ${targetBranch}，请先在本地处理冲突。`)
-    } else {
-      logger.warn(`rebase 后推送失败 ${currentBranch} -> ${targetBranch}: ${error.message}`)
-    }
-
-    return status
-  } finally {
-    const inProgressOperation = await git.getInProgressOperation()
-    if (inProgressOperation === 'rebase') {
-      await git.rebaseAbort()
-    }
-
-    await cleanupTemporaryRebaseBranch(git, tempBranch, currentBranch)
-  }
-}
-
-async function runRemoteMergeMode({
-  git,
-  currentBranch,
-  branchTargets,
-  inputOptions,
-  protectedBranches
-}) {
-  const summary = []
-  const shouldPushCurrent = branchTargets.includes(currentBranch)
-
-  logger.info(`远程合并模式: source=${currentBranch}, targets=${branchTargets.join(', ')}`)
-
-  if (shouldPushCurrent) {
-    const currentRemoteExists = await git.branchExistsRemote(currentBranch)
-    if (currentRemoteExists) {
-      logger.info(`同步远程分支: ${currentBranch}`)
-      await git.pull(currentBranch, {
-        allowUnrelatedHistories: true,
-        noRebase: true
-      })
-    }
-
-    logger.info(`推送源分支到远程: ${currentBranch}`)
-    await git.push(currentBranch, {
-      setUpstream: !currentRemoteExists,
-      noVerify: inputOptions.noVerify
-    })
-    logger.success(`源分支推送成功: ${currentBranch}`)
-    summary.push({ branch: currentBranch, status: 'pushed' })
-  } else {
-    logger.info('按 --not-push-current 配置，跳过当前分支远程推送。')
-  }
-
-  for (const targetBranch of branchTargets) {
-    if (targetBranch === currentBranch) {
-      continue
-    }
-
-    if (protectedBranches.has(targetBranch) && !inputOptions.forceProtected) {
-      logger.warn(`跳过受保护分支: ${targetBranch}（可用 --force-protected 覆盖）`)
-      summary.push({ branch: targetBranch, status: 'skipped-protected' })
-      continue
-    }
-
-    const remoteTargetExists = await git.branchExistsRemote(targetBranch)
-    if (!remoteTargetExists) {
-      logger.warn(`远程分支不存在，跳过远程合并: ${targetBranch}`)
-      summary.push({ branch: targetBranch, status: 'skipped-missing-remote' })
-      continue
-    }
-
-    try {
-      logger.info(`远程合并开始: ${currentBranch} -> ${targetBranch}`)
-      // 远程合并策略: 直接推送 refspec source:target，避免本地切分支和本地 merge。
-      await git.pushRefspec(currentBranch, targetBranch, {
-        noVerify: inputOptions.noVerify
-      })
-      logger.success(`远程合并成功: ${currentBranch} -> ${targetBranch}`)
-      summary.push({ branch: targetBranch, status: 'remote-merged' })
-    } catch (error) {
-      const status = classifyRemoteMergeFailure(error)
-      logger.warn(`远程合并失败 ${currentBranch} -> ${targetBranch}: ${error.message}`)
-
-      if (status === 'remote-merge-rejected') {
-        const fallbackStatus = await pushTargetByRebaseFallback({
-          git,
-          currentBranch,
-          targetBranch,
-          inputOptions
-        })
-        summary.push({ branch: targetBranch, status: fallbackStatus })
-        continue
-      }
-
-      summary.push({ branch: targetBranch, status })
-    }
-  }
-
-  return summary
-}
-
 export async function runPushWorkflow(inputOptions) {
   const context = await resolveGitContext({
     cwd: inputOptions.cwd,
@@ -354,7 +170,6 @@ export async function runPushWorkflow(inputOptions) {
     })
   }
 
-  const remoteMergeMode = inputOptions.remoteMerge === true
   let branchTargets = uniqueBranches([
     ...(inputOptions.notPushCurrent ? [] : [currentBranch]),
     ...(inputOptions.targetBranches || [])
@@ -390,22 +205,6 @@ export async function runPushWorkflow(inputOptions) {
   const originalBranch = currentBranch
 
   try {
-    if (remoteMergeMode) {
-      const remoteSummary = await runRemoteMergeMode({
-        git,
-        currentBranch,
-        branchTargets,
-        inputOptions,
-        protectedBranches
-      })
-      return {
-        repoRoot: context.topLevelPath,
-        currentBranch,
-        summary: remoteSummary,
-        inheritedFromParent: context.inheritedFromParent
-      }
-    }
-
     for (const targetBranch of branchTargets) {
       if (protectedBranches.has(targetBranch) && !inputOptions.forceProtected) {
         logger.warn(`跳过受保护分支: ${targetBranch}（可用 --force-protected 覆盖）`)
