@@ -7,6 +7,7 @@ const LEGACY_ALIAS_MAP = new Map([
   ['--noVerify', '--no-verify'],
   ['--allLocal', '--all-local'],
   ['--mergeMain', '--merge-main'],
+  ['--aiReview', '--ai-review'],
   ['--aiProfile', '--ai-profile'],
   ['--aiCommit', '--ai-commit']
 ])
