@@ -14,6 +14,7 @@ import { runUndoCommand } from './commands/undo.js'
 import { asIcodeError } from './core/errors.js'
 import { logger } from './core/logger.js'
 import { normalizeLegacyArgs } from './core/args.js'
+import { notifyIfCliUpdateAvailable } from './core/update-notifier.js'
 
 function isTruthy(value) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -44,6 +45,40 @@ const COMMANDS = {
   help: async () => {
     printMainHelp()
   }
+}
+
+/**
+ * 执行 CLI 主流程并在命令成功后触发升级提示检查。
+ * 输入为命令行参数与可注入依赖，输出为建议的退出码。
+ */
+export async function runCli(argv = process.argv.slice(2), dependencies = {}) {
+  const commands = dependencies.commands || COMMANDS
+  const printHelp = dependencies.printMainHelp || printMainHelp
+  const notifyUpdate = dependencies.notifyIfCliUpdateAvailable || notifyIfCliUpdateAvailable
+  const { globalArgs, commandName, commandArgs } = parseEntryArgs(argv)
+  const globalResult = applyGlobalFlags(globalArgs)
+
+  if (globalResult.shouldExit) {
+    return globalResult.exitCode
+  }
+
+  if (!commandName) {
+    printHelp()
+    return 0
+  }
+
+  const command = commands[commandName]
+  if (!command) {
+    throw new Error(`未知命令: ${commandName}`)
+  }
+
+  await command(commandArgs)
+
+  if (commandName !== 'help') {
+    await notifyUpdate()
+  }
+
+  return 0
 }
 
 function parseEntryArgs(argv) {
@@ -86,28 +121,19 @@ function applyGlobalFlags(globalArgs) {
   }
 }
 
-async function main() {
-  const { globalArgs, commandName, commandArgs } = parseEntryArgs(process.argv.slice(2))
-  const globalResult = applyGlobalFlags(globalArgs)
-
-  if (globalResult.shouldExit) {
-    process.exit(globalResult.exitCode)
-  }
-
-  if (!commandName) {
-    printMainHelp()
-    process.exit(0)
-  }
-
-  const command = COMMANDS[commandName]
-  if (!command) {
-    throw new Error(`未知命令: ${commandName}`)
-  }
-
-  await command(commandArgs)
+/**
+ * 启动 CLI 入口，复用 runCli 处理参数与命令调度。
+ * 输入为可选 argv 与依赖注入，输出为退出码。
+ */
+export async function main(argv = process.argv.slice(2), dependencies = {}) {
+  return runCli(argv, dependencies)
 }
 
-main().catch((error) => {
+/**
+ * 统一处理 CLI 异常并输出对用户可读的错误信息。
+ * 输入为任意异常对象，输出为进程退出。
+ */
+export function handleCliError(error) {
   const normalized = asIcodeError(error)
   logger.error(normalized.message)
 
@@ -128,4 +154,4 @@ main().catch((error) => {
   }
 
   process.exit(normalized.exitCode || 1)
-})
+}
