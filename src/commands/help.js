@@ -1,3 +1,7 @@
+/**
+ * 输出主帮助文本，集中展示命令总览与常用示例。
+ * 输入为空，输出为标准输出文本。
+ */
 export function printMainHelp() {
   process.stdout.write(`
 icode v3 - Git workflow CLI
@@ -18,6 +22,7 @@ Commands:
   config      查看和修改本地配置（含 AI profile）
   explain     AI 解释 Git diff（自然语言）
   info        查看当前 git 与配置环境
+  completion  生成 bash/zsh tab 补全脚本
   help        查看帮助（命令总览）
 
 Global options:
@@ -44,6 +49,7 @@ Examples:
   icode migrate --interactive
   icode push --no-verify -m "chore: bypass hooks"
   icode config protect add main release
+  source <(icode completion zsh)
   icode info
 `)
 }

@@ -23,6 +23,26 @@ icode info
 icode config ai list
 ```
 
+## Shell Tab 补全
+
+`icode` 现在支持生成 `bash` / `zsh` 的 tab 补全脚本。
+
+临时启用：
+
+```bash
+source <(icode completion bash)
+source <(icode completion zsh)
+```
+
+持久启用可以把对应命令追加到 `~/.bashrc` 或 `~/.zshrc`。
+
+补全范围包括：
+
+- 顶层命令和嵌套子命令
+- 已知参数开关与枚举值
+- 常见 Git 分支 / ref
+- `icode config ai ...` 下已配置的 profile 名称
+
 ## 全局参数
 
 - `-h, --help`：查看帮助（也可 `icode <command> -h` 查看子命令参数）

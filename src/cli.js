@@ -1,6 +1,7 @@
 import { runAiCommand } from './commands/ai.js'
 import { runCleanCommand } from './commands/clean.js'
 import { runCodeReviewCommand } from './commands/codereview.js'
+import { runCompletionCommand, runHiddenCompletionCommand } from './commands/completion.js'
 import { runCheckoutCommand } from './commands/checkout.js'
 import { runConfigCommand } from './commands/config.js'
 import { runExplainCommand } from './commands/explain.js'
@@ -32,6 +33,7 @@ function serializeErrorMeta(meta) {
 const COMMANDS = {
   ai: runAiCommand,
   codereview: runCodeReviewCommand,
+  completion: runCompletionCommand,
   checkout: runCheckoutCommand,
   push: runPushCommand,
   sync: runSyncCommand,
@@ -44,8 +46,11 @@ const COMMANDS = {
   info: runInfoCommand,
   help: async () => {
     printMainHelp()
-  }
+  },
+  __complete: runHiddenCompletionCommand
 }
+
+const NO_UPDATE_NOTIFICATION_COMMANDS = new Set(['help', 'completion', '__complete'])
 
 /**
  * 执行 CLI 主流程并在命令成功后触发升级提示检查。
@@ -74,7 +79,7 @@ export async function runCli(argv = process.argv.slice(2), dependencies = {}) {
 
   await command(commandArgs)
 
-  if (commandName !== 'help') {
+  if (!NO_UPDATE_NOTIFICATION_COMMANDS.has(commandName)) {
     await notifyUpdate()
   }
 

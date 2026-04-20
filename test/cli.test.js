@@ -37,3 +37,35 @@ test('runCli does not call update notifier for help command', async () => {
   assert.equal(exitCode, 0)
   assert.equal(notifierCalled, false)
 })
+
+test('runCli does not call update notifier for completion command', async () => {
+  let notifierCalled = false
+
+  const exitCode = await runCli(['completion'], {
+    commands: {
+      completion: async () => {}
+    },
+    notifyIfCliUpdateAvailable: async () => {
+      notifierCalled = true
+    }
+  })
+
+  assert.equal(exitCode, 0)
+  assert.equal(notifierCalled, false)
+})
+
+test('runCli does not call update notifier for hidden completion command', async () => {
+  let notifierCalled = false
+
+  const exitCode = await runCli(['__complete'], {
+    commands: {
+      __complete: async () => {}
+    },
+    notifyIfCliUpdateAvailable: async () => {
+      notifierCalled = true
+    }
+  })
+
+  assert.equal(exitCode, 0)
+  assert.equal(notifierCalled, false)
+})
