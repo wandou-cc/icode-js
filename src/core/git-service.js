@@ -162,18 +162,50 @@ export class GitService {
   }
 
   async statusPorcelain() {
+    // 返回标准 porcelain 状态，供上层统一判断“是否存在未提交改动”。
     const result = await this.exec(['status', '--porcelain'])
     return result.stdout
   }
 
   async hasChanges() {
+    // 只要 porcelain 有输出，就说明暂存区、工作区或未跟踪文件存在改动。
     const output = await this.statusPorcelain()
     return cleanOutput(output).length > 0
   }
 
-  async diffWorkingTree() {
-    const result = await this.exec(['diff'])
+  // 列出未被忽略的未跟踪文件，供 AI 工作流补全新文件 diff。
+  async listUntrackedFiles() {
+    const result = await this.exec(['ls-files', '--others', '--exclude-standard'])
     return result.stdout
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  // 通过 no-index diff 生成“/dev/null -> 新文件”的补丁，覆盖未跟踪文件内容。
+  async buildUntrackedFileDiff(filePath) {
+    const result = await this.exec(['diff', '--no-index', '--binary', '--', '/dev/null', filePath], {
+      allowFailure: true
+    })
+    return result.stdout
+  }
+
+  async diffWorkingTree() {
+    // git diff 默认不包含 untracked 文件，这里显式补齐，避免新仓库被误判成“无改动”。
+    const trackedResult = await this.exec(['diff'])
+    const untrackedFiles = await this.listUntrackedFiles()
+    const untrackedDiffs = []
+
+    for (const filePath of untrackedFiles) {
+      const diff = await this.buildUntrackedFileDiff(filePath)
+      if (cleanOutput(diff)) {
+        untrackedDiffs.push(diff.trimEnd())
+      }
+    }
+
+    return [trackedResult.stdout.trimEnd(), ...untrackedDiffs]
+      .filter(Boolean)
+      .join('\n\n')
   }
 
   async diffStaged() {

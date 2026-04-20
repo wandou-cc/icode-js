@@ -104,3 +104,79 @@ test('ai-commit includes local hook and commitlint conventions in AI prompt', as
     delete process.env.ICODE_CONFIG_PATH
   }
 })
+
+test('ai-commit applies commit for untracked files without manual git add', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-commit-workflow-test-'))
+  const repoPath = path.join(tempRoot, 'repo')
+  process.env.ICODE_CONFIG_PATH = path.join(tempRoot, 'config.json')
+
+  const originalFetch = global.fetch
+
+  try {
+    fs.mkdirSync(repoPath, { recursive: true })
+    await git(repoPath, ['init'])
+    await git(repoPath, ['config', 'user.email', 'test@example.com'])
+    await git(repoPath, ['config', 'user.name', 'test'])
+
+    fs.writeFileSync(path.join(repoPath, 'tracked.txt'), 'base\n', 'utf8')
+    await git(repoPath, ['add', '-A'])
+    await git(repoPath, ['commit', '-m', 'chore: init'])
+
+    fs.writeFileSync(path.join(repoPath, 'new-file.txt'), 'hello new file\n', 'utf8')
+
+    upsertAiProfile('local', {
+      provider: 'openai',
+      format: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-test',
+      model: 'gpt-4o-mini'
+    })
+    useAiProfile('local')
+
+    let capturedBody = null
+    global.fetch = async (_url, options = {}) => {
+      capturedBody = JSON.parse(options.body)
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          forEach() {}
+        },
+        async text() {
+          return JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: '{"type":"feat","scope":"repo","subject":"add new file","body":""}'
+                }
+              }
+            ]
+          })
+        }
+      }
+    }
+
+    const result = await runAiCommitWorkflow({
+      cwd: repoPath,
+      profile: 'local',
+      repoMode: 'auto',
+      apply: true,
+      yes: true
+    })
+
+    assert.equal(result.applied, true)
+    assert.equal(result.commitMessage, 'feat(repo): add new file')
+    assert.ok(capturedBody)
+    assert.match(capturedBody.messages[1].content, /new-file\.txt/)
+    assert.match(capturedBody.messages[1].content, /hello new file/)
+
+    const committedFiles = await git(repoPath, ['show', '--stat', '--name-only', '--format=', 'HEAD'])
+    assert.match(committedFiles.stdout, /new-file\.txt/)
+
+    const status = await git(repoPath, ['status', '--short'])
+    assert.equal(status.stdout.trim(), '')
+  } finally {
+    global.fetch = originalFetch
+    delete process.env.ICODE_CONFIG_PATH
+  }
+})

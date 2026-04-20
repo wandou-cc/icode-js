@@ -33,6 +33,15 @@ function buildCommitMessage(parsed) {
   return `${header}\n\n${body}`
 }
 
+// 将多个 diff 片段稳定拼接，避免空块污染 prompt。
+function joinDiffSections(sections) {
+  return sections
+    .map((item) => (item || '').trim())
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+// 基于“全部未提交改动”生成 AI commit，确保未暂存新文件也能被识别并提交。
 export async function runAiCommitWorkflow(options) {
   const context = await resolveGitContext({
     cwd: options.cwd,
@@ -44,13 +53,19 @@ export async function runAiCommitWorkflow(options) {
     logger.info(`仓库根目录: ${context.topLevelPath}`)
   }
 
-  let diff = await git.diffStaged()
-  let diffSource = 'staged'
-
-  if (!diff.trim()) {
-    diff = await git.diffWorkingTree()
-    diffSource = 'working-tree'
-  }
+  const stagedDiff = await git.diffStaged()
+  const workingDiff = await git.diffWorkingTree()
+  const hasStagedDiff = Boolean(stagedDiff.trim())
+  const hasWorkingDiff = Boolean(workingDiff.trim())
+  const diff = joinDiffSections([
+    hasStagedDiff ? `--- STAGED DIFF ---\n${stagedDiff}` : '',
+    hasWorkingDiff ? `--- WORKING TREE DIFF ---\n${workingDiff}` : ''
+  ])
+  const diffSource = hasStagedDiff && hasWorkingDiff
+    ? 'staged+working-tree'
+    : hasStagedDiff
+      ? 'staged'
+      : 'working-tree'
 
   if (!diff.trim()) {
     throw new IcodeError('没有可用于生成提交信息的代码改动。', {
@@ -105,8 +120,8 @@ export async function runAiCommitWorkflow(options) {
     }
   }
 
-  if (diffSource === 'working-tree') {
-    // 从 working-tree 生成信息时，提交前统一暂存，避免 commit 为空。
+  if (hasWorkingDiff) {
+    // 统一暂存工作区改动，确保未暂存修改和新文件与 AI 看到的 diff 保持一致。
     await git.stageAll()
   }
 
