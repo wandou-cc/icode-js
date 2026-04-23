@@ -25,6 +25,7 @@ test('push options only enable boolean flags when passed on CLI', () => {
     targetBranches: ['dev', 'test'],
     message: 'fix: test',
     yes: false,
+    remoteMerge: false,
     aiCommit: false,
     aiCommitLang: 'en',
     aiProfile: 'ollama',
@@ -61,6 +62,7 @@ test('push options respect explicit CLI flags', () => {
     targetBranches: ['release'],
     message: 'fix: test',
     yes: true,
+    remoteMerge: false,
     aiCommit: true,
     aiCommitLang: 'en',
     aiProfile: 'custom-profile',
@@ -70,4 +72,16 @@ test('push options respect explicit CLI flags', () => {
     repoMode: 'strict',
     noVerify: true
   })
+})
+
+test('push options support explicit remote merge flag', () => {
+  const options = resolvePushWorkflowOptions(
+    {
+      'remote-merge': true
+    },
+    ['release'],
+    {}
+  )
+
+  assert.equal(options.remoteMerge, true)
 })

@@ -6,8 +6,10 @@ import test from 'node:test'
 import {
   deleteValue,
   getConfigFilePath,
+  getPlatformConfig,
   getRepoPolicy,
   readConfig,
+  setPlatformConfig,
   setRepoPolicy,
   setValue
 } from '../src/core/config-store.js'
@@ -27,10 +29,24 @@ test('config-store read/write basic flow', () => {
   assert.equal(afterSet.defaults.repoMode, 'strict')
 
   setRepoPolicy('/tmp/my-repo', {
-    protectedBranches: ['main', 'release']
+    protectedBranches: ['main', 'release'],
+    remoteMerge: {
+      enabled: true,
+      apiKey: 'rm_test_key'
+    }
   })
   const policy = getRepoPolicy('/tmp/my-repo')
   assert.deepEqual(policy.protectedBranches.sort(), ['main', 'release'])
+  assert.equal(policy.remoteMerge.enabled, true)
+  assert.equal(policy.remoteMerge.apiKey, 'rm_test_key')
+
+  setPlatformConfig('remoteMerge', {
+    provider: 'gitlab',
+    apiKey: 'platform_key'
+  })
+  const platformConfig = getPlatformConfig('remoteMerge')
+  assert.equal(platformConfig.provider, 'gitlab')
+  assert.equal(platformConfig.apiKey, 'platform_key')
 
   deleteValue('defaults.repoMode')
   const afterDelete = readConfig()

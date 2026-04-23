@@ -15,9 +15,11 @@ import {
 import {
   deleteValue,
   getConfigFilePath,
+  getPlatformConfig,
   getRepoPolicy,
   getValue,
   readConfig,
+  setPlatformConfig,
   setRepoPolicy,
   setValue
 } from '../core/config-store.js'
@@ -32,7 +34,7 @@ Usage:
   icode config <command> [...args]
 
 Arguments:
-  <command>                子命令（list/get/set/delete/ai/protect）
+  <command>                子命令（list/get/set/delete/ai/protect/platform）
 
 Commands:
   list                    查看全部配置
@@ -43,6 +45,7 @@ Commands:
   protect list            查看受保护分支
   protect add <branch...> 添加受保护分支
   protect remove <branch...> 移除受保护分支
+  platform <subcommand>   平台级配置（如远程合并密钥）
 
 Options:
   --repo-mode <mode>      仓库模式: auto(自动继承父仓库) | strict(禁止继承)，仅影响 protect
@@ -52,9 +55,101 @@ Examples:
   icode config set defaults.repoMode strict
   icode config get defaults.repoMode
   icode config protect add main release
+  icode config platform remote-merge set --provider gitlab --api-key rm_xxx
   icode config ai set openai --format openai --base-url https://api.openai.com/v1 --api-key sk-xxx --model gpt-4o-mini --activate
   icode config ai set ollama --format ollama --base-url http://127.0.0.1:11434 --model qwen2.5:7b --activate
 `)
+}
+
+function maskSecret(secret) {
+  const raw = String(secret || '').trim()
+  if (!raw) {
+    return ''
+  }
+  if (raw.length <= 8) {
+    return `${raw.slice(0, 2)}****${raw.slice(-1)}`
+  }
+  return `${raw.slice(0, 4)}****${raw.slice(-4)}`
+}
+
+function printPlatformHelp() {
+  process.stdout.write(`
+Usage:
+  icode config platform <subcommand> [options]
+
+Subcommands:
+  remote-merge show
+  remote-merge set --provider <name> --api-key <key>
+
+Examples:
+  icode config platform remote-merge show
+  icode config platform remote-merge set --provider gitlab --api-key rm_xxx
+`)
+}
+
+async function runPlatformConfigCommand(args) {
+  if (!args.length || args[0] === '-h' || args[0] === '--help') {
+    printPlatformHelp()
+    return
+  }
+
+  const [domain, action, ...rest] = args
+  if (domain !== 'remote-merge') {
+    throw new IcodeError(`未知 platform 子命令: ${domain}`, {
+      code: 'CONFIG_PLATFORM_UNKNOWN_SUBCOMMAND',
+      exitCode: 2
+    })
+  }
+
+  if (action === 'show') {
+    const config = getPlatformConfig('remoteMerge')
+    process.stdout.write(`${JSON.stringify({
+      provider: config.provider || '',
+      hasApiKey: Boolean(config.apiKey),
+      apiKeyMasked: maskSecret(config.apiKey)
+    }, null, 2)}\n`)
+    return
+  }
+
+  if (action === 'set') {
+    const parsed = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: {
+        provider: { type: 'string' },
+        'api-key': { type: 'string' }
+      }
+    })
+
+    const provider = String(parsed.values.provider || '').trim()
+    const apiKey = String(parsed.values['api-key'] || '').trim()
+
+    if (!provider) {
+      throw new IcodeError('缺少 --provider，示例: icode config platform remote-merge set --provider gitlab --api-key xxx', {
+        code: 'CONFIG_PLATFORM_PROVIDER_REQUIRED',
+        exitCode: 2
+      })
+    }
+
+    if (!apiKey) {
+      throw new IcodeError('缺少 --api-key，示例: icode config platform remote-merge set --provider gitlab --api-key xxx', {
+        code: 'CONFIG_PLATFORM_API_KEY_REQUIRED',
+        exitCode: 2
+      })
+    }
+
+    setPlatformConfig('remoteMerge', {
+      provider,
+      apiKey
+    })
+    logger.success(`平台远程合并密钥已写入: ${provider}`)
+    return
+  }
+
+  throw new IcodeError('platform remote-merge 仅支持: show | set', {
+    code: 'CONFIG_PLATFORM_INVALID_ACTION',
+    exitCode: 2
+  })
 }
 
 function printAiHelp() {
@@ -383,6 +478,11 @@ async function resolvePolicyRoot(repoMode) {
 export async function runConfigCommand(rawArgs) {
   if (rawArgs[0] === 'ai') {
     await runAiConfigCommand(rawArgs.slice(1))
+    return
+  }
+
+  if (rawArgs[0] === 'platform') {
+    await runPlatformConfigCommand(rawArgs.slice(1))
     return
   }
 

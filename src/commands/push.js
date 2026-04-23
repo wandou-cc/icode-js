@@ -8,8 +8,10 @@ function formatBranchStatus(status) {
   const map = {
     pushed: '已推送',
     'merged-and-pushed': '已合并并推送',
+    'remote-merged-and-pushed': '已远程合并并推送',
     'skipped-protected': '已跳过(受保护)',
-    'skipped-missing-remote': '已跳过(远程分支不存在)'
+    'skipped-missing-remote': '已跳过(远程分支不存在)',
+    paused: '已暂停'
   }
 
   return map[status] || status
@@ -27,6 +29,7 @@ Options:
   -m, --message <msg>         提交信息（未填会提示输入）
   -y, --yes                   自动确认（跳过确认提示）
   --local-merge               使用本地 merge 模式（默认，会切换分支并生成 merge commit）
+  --remote-merge              使用远程 merge API 模式（需先配置密钥）
   --ai-commit                 push 前自动执行 AI commit（会参考本地 hook/commitlint 规范）
   --ai-profile <name>         指定 AI profile（用于 --ai-commit）
   --pull-main                 提交前将主分支同步到当前分支
@@ -39,6 +42,7 @@ Options:
 Notes:
   默认使用本地 merge 模式。
   未指定 target 时默认处理当前分支。
+  远程 merge 若出现冲突会暂停流程，并保留明确失败原因。
   布尔开关仅在命令行显式传入时生效（如 --ai-commit / --pull-main / --no-verify / -y）。
 `)
 }
@@ -75,6 +79,7 @@ export function resolvePushWorkflowOptions(parsedValues, parsedPositionals, scop
     message: parsedValues.message,
     // 显式传入开关才生效，避免配置项隐式开启 push 行为。
     yes: resolveBooleanOption(parsedValues.yes, false),
+    remoteMerge: resolveBooleanOption(parsedValues['remote-merge'], false),
     aiCommit: resolveBooleanOption(parsedValues['ai-commit'], false),
     aiCommitLang: resolveStringOption(undefined, scopedOptions.aiCommitLang, 'zh'),
     aiProfile: resolveStringOption(parsedValues['ai-profile'], scopedOptions.aiProfile, ''),
@@ -96,6 +101,7 @@ export async function runPushCommand(rawArgs) {
       message: { type: 'string', short: 'm' },
       yes: { type: 'boolean', short: 'y' },
       'local-merge': { type: 'boolean' },
+      'remote-merge': { type: 'boolean' },
       'ai-commit': { type: 'boolean' },
       'ai-profile': { type: 'string' },
       help: { type: 'boolean', short: 'h' },

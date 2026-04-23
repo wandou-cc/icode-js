@@ -9,6 +9,12 @@ const DEFAULT_CONFIG = {
     repoMode: 'auto',
     defaultMainBranches: ['main', 'master']
   },
+  platforms: {
+    remoteMerge: {
+      provider: '',
+      apiKey: ''
+    }
+  },
   ai: {
     activeProfile: '',
     profiles: {},
@@ -73,6 +79,14 @@ export function readConfig() {
       defaults: {
         ...cloneDefault().defaults,
         ...(parsed.defaults || {})
+      },
+      platforms: {
+        ...cloneDefault().platforms,
+        ...(parsed.platforms || {}),
+        remoteMerge: {
+          ...cloneDefault().platforms.remoteMerge,
+          ...(parsed.platforms?.remoteMerge || {})
+        }
       },
       ai: {
         ...cloneDefault().ai,
@@ -176,8 +190,13 @@ function normalizeRepoKey(repoRootPath) {
 export function getRepoPolicy(repoRootPath) {
   const key = normalizeRepoKey(repoRootPath)
   const config = readConfig()
-  return config.repositories[key] || {
-    protectedBranches: []
+  return {
+    protectedBranches: [],
+    remoteMerge: {
+      enabled: false,
+      apiKey: ''
+    },
+    ...(config.repositories[key] || {})
   }
 }
 
@@ -186,9 +205,42 @@ export function setRepoPolicy(repoRootPath, policy) {
   const config = readConfig()
   config.repositories[key] = {
     protectedBranches: [],
+    remoteMerge: {
+      enabled: false,
+      apiKey: ''
+    },
     ...(config.repositories[key] || {}),
     ...policy
   }
   writeConfig(config)
   return config.repositories[key]
+}
+
+export function getPlatformConfig(platformName) {
+  const config = readConfig()
+  const name = String(platformName || '').trim()
+  if (!name) {
+    return {}
+  }
+
+  return config.platforms?.[name] || {}
+}
+
+export function setPlatformConfig(platformName, value) {
+  const config = readConfig()
+  const name = String(platformName || '').trim()
+  if (!name) {
+    throw new IcodeError('平台名称不能为空', { code: 'CONFIG_PLATFORM_EMPTY', exitCode: 2 })
+  }
+
+  config.platforms = {
+    ...(config.platforms || {}),
+    [name]: {
+      ...(config.platforms?.[name] || {}),
+      ...(value || {})
+    }
+  }
+
+  writeConfig(config)
+  return config.platforms[name]
 }

@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { runCommand } from '../src/core/shell.js'
+import { setPlatformConfig, setRepoPolicy } from '../src/core/config-store.js'
 import { upsertAiProfile, useAiProfile } from '../src/core/ai-config.js'
 import { runPushWorkflow } from '../src/workflows/push-workflow.js'
 
@@ -54,6 +55,11 @@ async function createRemoteMergeFixture(options = {}) {
     remotePath,
     repoPath
   }
+}
+
+async function resolveRepoRoot(repoPath) {
+  const result = await git(repoPath, ['rev-parse', '--show-toplevel'])
+  return result.stdout.trim()
 }
 
 test('push-workflow uses local merge strategy by default for target branches', async () => {
@@ -131,5 +137,108 @@ test('push-workflow with ai-commit commits and pushes untracked files without ma
   } finally {
     global.fetch = originalFetch
     delete process.env.ICODE_CONFIG_PATH
+  }
+})
+
+test('push-workflow remote merge pauses with clear conflict reason', async () => {
+  const fixture = await createRemoteMergeFixture()
+  const originalFetch = global.fetch
+  const originalConfigPath = process.env.ICODE_CONFIG_PATH
+
+  try {
+    const repoRoot = await resolveRepoRoot(fixture.repoPath)
+    process.env.ICODE_CONFIG_PATH = path.join(path.dirname(fixture.repoPath), 'remote-merge-config.json')
+    setRepoPolicy(repoRoot, {
+      remoteMerge: {
+        enabled: true
+      }
+    })
+    setPlatformConfig('remoteMerge', {
+      provider: 'gitlab',
+      apiKey: 'rm_test_key'
+    })
+
+    global.fetch = async () => ({
+      ok: false,
+      status: 409,
+      async text() {
+        return JSON.stringify({
+          reason: 'shared.txt 存在内容冲突'
+        })
+      }
+    })
+
+    await assert.rejects(
+      () => runPushWorkflow({
+        cwd: fixture.repoPath,
+        targetBranches: ['test'],
+        yes: true,
+        repoMode: 'auto',
+        remoteMerge: true
+      }),
+      (error) => {
+        assert.equal(error.code, 'PUSH_REMOTE_MERGE_PAUSED')
+        assert.match(error.message, /远程合并冲突: shared.txt 存在内容冲突/)
+        return true
+      }
+    )
+  } finally {
+    global.fetch = originalFetch
+    if (originalConfigPath == null) {
+      delete process.env.ICODE_CONFIG_PATH
+    } else {
+      process.env.ICODE_CONFIG_PATH = originalConfigPath
+    }
+  }
+})
+
+test('push-workflow remote merge succeeds when api returns ok', async () => {
+  const fixture = await createRemoteMergeFixture()
+  const originalFetch = global.fetch
+  const originalConfigPath = process.env.ICODE_CONFIG_PATH
+
+  try {
+    const repoRoot = await resolveRepoRoot(fixture.repoPath)
+    process.env.ICODE_CONFIG_PATH = path.join(path.dirname(fixture.repoPath), 'remote-merge-config.json')
+    setRepoPolicy(repoRoot, {
+      remoteMerge: {
+        enabled: true
+      }
+    })
+    setPlatformConfig('remoteMerge', {
+      provider: 'gitlab',
+      apiKey: 'rm_test_key'
+    })
+
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          ok: true,
+          reason: 'merge completed'
+        })
+      }
+    })
+
+    const result = await runPushWorkflow({
+      cwd: fixture.repoPath,
+      targetBranches: ['test'],
+      yes: true,
+      repoMode: 'auto',
+      remoteMerge: true
+    })
+
+    assert.deepEqual(result.summary, [
+      { branch: 'source', status: 'pushed' },
+      { branch: 'test', status: 'remote-merged-and-pushed' }
+    ])
+  } finally {
+    global.fetch = originalFetch
+    if (originalConfigPath == null) {
+      delete process.env.ICODE_CONFIG_PATH
+    } else {
+      process.env.ICODE_CONFIG_PATH = originalConfigPath
+    }
   }
 })

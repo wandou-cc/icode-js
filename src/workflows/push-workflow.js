@@ -1,10 +1,11 @@
-import { getRepoPolicy } from '../core/config-store.js'
+import { getPlatformConfig, getRepoPolicy } from '../core/config-store.js'
 import { IcodeError } from '../core/errors.js'
 import { GitService } from '../core/git-service.js'
 import { resolveGitContext } from '../core/git-context.js'
 import { formatAiCommitSummary } from '../core/ai-commit-summary.js'
 import { logger } from '../core/logger.js'
 import { confirm, input } from '../core/prompts.js'
+import { requestRemoteMerge } from '../core/remote-merge-client.js'
 import { runAiCommitWorkflow } from './ai-commit-workflow.js'
 
 function uniqueBranches(branches) {
@@ -122,6 +123,75 @@ async function checkoutTargetBranch(git, targetBranch, sourceBranch) {
   }
 }
 
+function normalizeRemoteMergePolicy(policy = {}) {
+  const remoteMerge = policy.remoteMerge && typeof policy.remoteMerge === 'object' ? policy.remoteMerge : {}
+  return {
+    enabled: remoteMerge.enabled === true,
+    apiKey: typeof remoteMerge.apiKey === 'string' ? remoteMerge.apiKey.trim() : ''
+  }
+}
+
+function normalizeRemoteMergePlatformConfig(config = {}) {
+  return {
+    provider: typeof config.provider === 'string' ? config.provider.trim() : '',
+    apiKey: typeof config.apiKey === 'string' ? config.apiKey.trim() : ''
+  }
+}
+
+function buildRemoteMergePauseError(targetBranch, reason, meta = {}) {
+  return new IcodeError(`远程合并已暂停(${targetBranch}): ${reason}`, {
+    code: 'PUSH_REMOTE_MERGE_PAUSED',
+    exitCode: 2,
+    meta: {
+      targetBranch,
+      reason,
+      ...meta
+    }
+  })
+}
+
+async function performRemoteMerge({ git, currentBranch, targetBranch, remoteExists, inputOptions, remoteMergePolicy, remoteMergePlatform }) {
+  if (!remoteExists) {
+    throw buildRemoteMergePauseError(targetBranch, '远程合并要求目标分支已存在于 origin。', {
+      remoteExists: false
+    })
+  }
+
+  if (!remoteMergePolicy.enabled) {
+    throw buildRemoteMergePauseError(targetBranch, '仓库未启用远程合并配置，请先配置 repositories.<repo>.remoteMerge.enabled=true。')
+  }
+
+  if (!remoteMergePlatform.apiKey) {
+    throw buildRemoteMergePauseError(targetBranch, '平台未配置远程合并密钥，请先执行 icode config platform remote-merge set --provider <name> --api-key <key>。')
+  }
+
+  logger.info(`发起远程合并: ${currentBranch} -> ${targetBranch}`)
+  const result = await requestRemoteMerge({
+    provider: remoteMergePlatform.provider,
+    apiKey: remoteMergePlatform.apiKey,
+    sourceBranch: currentBranch,
+    targetBranch,
+    repoRoot: git.cwd,
+    noVerify: inputOptions.noVerify
+  })
+
+  if (result.conflict) {
+    throw buildRemoteMergePauseError(targetBranch, `远程合并冲突: ${result.reason}`, {
+      sourceBranch: currentBranch,
+      result
+    })
+  }
+
+  if (!result.ok) {
+    throw buildRemoteMergePauseError(targetBranch, `远程合并失败: ${result.reason}`, {
+      sourceBranch: currentBranch,
+      result
+    })
+  }
+
+  logger.success(`远程合并成功: ${currentBranch} -> ${targetBranch}`)
+}
+
 export async function runPushWorkflow(inputOptions) {
   const context = await resolveGitContext({
     cwd: inputOptions.cwd,
@@ -131,6 +201,8 @@ export async function runPushWorkflow(inputOptions) {
   const git = new GitService(context)
   const policy = getRepoPolicy(context.topLevelPath)
   const protectedBranches = new Set((policy.protectedBranches || []).map((item) => item.trim()).filter(Boolean))
+  const remoteMergePolicy = normalizeRemoteMergePolicy(policy)
+  const remoteMergePlatform = normalizeRemoteMergePlatformConfig(getPlatformConfig('remoteMerge'))
 
   logger.info(`仓库根目录: ${context.topLevelPath}`)
   if (context.inheritedFromParent) {
@@ -239,13 +311,25 @@ export async function runPushWorkflow(inputOptions) {
       const { remoteExists, checkoutMode } = await checkoutTargetBranch(git, targetBranch, currentBranch)
       logger.info(`目标分支准备完成: ${targetBranch} (${checkoutMode})`)
 
-      // 保留 merge commit，方便后续追溯“从哪个分支合并过来”。
-      logger.info(`合并分支: ${currentBranch} -> ${targetBranch}`)
-      await git.merge(currentBranch, {
-        noFf: true,
-        noEdit: true
-      })
-      logger.success(`合并成功: ${currentBranch} -> ${targetBranch}`)
+      if (inputOptions.remoteMerge) {
+        await performRemoteMerge({
+          git,
+          currentBranch,
+          targetBranch,
+          remoteExists,
+          inputOptions,
+          remoteMergePolicy,
+          remoteMergePlatform
+        })
+      } else {
+        // 保留 merge commit，方便后续追溯“从哪个分支合并过来”。
+        logger.info(`合并分支: ${currentBranch} -> ${targetBranch}`)
+        await git.merge(currentBranch, {
+          noFf: true,
+          noEdit: true
+        })
+        logger.success(`合并成功: ${currentBranch} -> ${targetBranch}`)
+      }
 
       logger.info(`推送目标分支: ${targetBranch}`)
       await git.push(targetBranch, {
@@ -254,7 +338,7 @@ export async function runPushWorkflow(inputOptions) {
       })
 
       logger.success(`目标分支推送成功: ${targetBranch}`)
-      summary.push({ branch: targetBranch, status: 'merged-and-pushed' })
+      summary.push({ branch: targetBranch, status: inputOptions.remoteMerge ? 'remote-merged-and-pushed' : 'merged-and-pushed' })
     }
   } finally {
     const branchAfterWorkflow = await git.getCurrentBranch()
