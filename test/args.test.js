@@ -9,9 +9,11 @@ test('normalizeLegacyArgs maps legacy camel-case flags', () => {
     '--aiReview',
     '--aiProfile',
     '--aiCommit',
+    '--remoteMerge',
     '--noVerify',
     '--repoMode',
-    '--notPushCurrent'
+    '--notPushCurrent',
+    '-pm'
   ])
 
   assert.deepEqual(normalized, [
@@ -20,8 +22,10 @@ test('normalizeLegacyArgs maps legacy camel-case flags', () => {
     '--ai-review',
     '--ai-profile',
     '--ai-commit',
+    '--remote-merge',
     '--no-verify',
     '--repo-mode',
-    '--not-push-current'
+    '--not-push-current',
+    '--pull-main'
   ])
 })

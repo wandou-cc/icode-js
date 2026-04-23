@@ -4,6 +4,21 @@ import { normalizeLegacyArgs } from '../core/cli/args.js'
 import { logger } from '../core/tools/logger.js'
 import { runPushWorkflow } from '../workflows/push-workflow.js'
 
+const PUSH_PARSE_OPTIONS = {
+  message: { type: 'string', short: 'm' },
+  yes: { type: 'boolean', short: 'y' },
+  'local-merge': { type: 'boolean' },
+  'remote-merge': { type: 'boolean', short: 'r' },
+  'ai-commit': { type: 'boolean' },
+  'ai-profile': { type: 'string' },
+  help: { type: 'boolean', short: 'h' },
+  'pull-main': { type: 'boolean' },
+  'not-push-current': { type: 'boolean' },
+  'force-protected': { type: 'boolean' },
+  'repo-mode': { type: 'string' },
+  'no-verify': { type: 'boolean' }
+}
+
 function formatBranchStatus(status) {
   const map = {
     pushed: '已推送',
@@ -29,7 +44,7 @@ Options:
   -m, --message <msg>         提交信息（未填会提示输入）
   -y, --yes                   自动确认（跳过确认提示）
   --local-merge               使用本地 merge 模式（默认，会切换分支并生成 merge commit）
-  --remote-merge              使用远程 PR/MR 合并模式（默认启用项目远程合并）
+  -r, --remote-merge          使用远程 PR/MR 合并模式（默认启用项目远程合并）
   --ai-commit                 push 前自动执行 AI commit（会参考本地 hook/commitlint 规范）
   --ai-profile <name>         指定 AI profile（用于 --ai-commit）
   --pull-main                 提交前将主分支同步到当前分支
@@ -100,27 +115,20 @@ export function resolvePushWorkflowOptions(parsedValues, parsedPositionals, scop
   }
 }
 
-export async function runPushCommand(rawArgs) {
+// 解析 push 子命令参数；rawArgs 是不含命令名的参数数组，返回 node:util parseArgs 的结构化结果。
+export function parsePushCommandArgs(rawArgs) {
   const args = normalizeLegacyArgs(rawArgs)
-  const scopedOptions = getAiCommandOptions('push')
-  const parsed = parseArgs({
+  return parseArgs({
     args,
     allowPositionals: true,
-    options: {
-      message: { type: 'string', short: 'm' },
-      yes: { type: 'boolean', short: 'y' },
-      'local-merge': { type: 'boolean' },
-      'remote-merge': { type: 'boolean' },
-      'ai-commit': { type: 'boolean' },
-      'ai-profile': { type: 'string' },
-      help: { type: 'boolean', short: 'h' },
-      'pull-main': { type: 'boolean' },
-      'not-push-current': { type: 'boolean' },
-      'force-protected': { type: 'boolean' },
-      'repo-mode': { type: 'string' },
-      'no-verify': { type: 'boolean' }
-    }
+    options: PUSH_PARSE_OPTIONS
   })
+}
+
+// 执行 push 子命令；rawArgs 是不含命令名的参数数组，输出结果摘要并保留 workflow 抛出的失败信息。
+export async function runPushCommand(rawArgs) {
+  const scopedOptions = getAiCommandOptions('push')
+  const parsed = parsePushCommandArgs(rawArgs)
 
   if (parsed.values.help) {
     printHelp()

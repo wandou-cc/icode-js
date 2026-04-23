@@ -125,7 +125,7 @@ icode checkout <branch> [base] [--push-origin] [--pull-main] [--repo-mode auto|s
 ### push
 
 ```bash
-icode push [targetBranch...] [-m "commit message"] [--ai-commit] [--pull-main] [--not-push-current] [--remote-merge]
+icode push [targetBranch...] [-m "commit message"] [--ai-commit] [--pull-main] [--not-push-current] [-r|--remote-merge]
 ```
 
 示例：
@@ -149,7 +149,7 @@ icode push release test -m "feat: batch publish" -y # 默认本地 merge 推送�
 - `-m, --message <msg>`：提交信息（未填会提示输入）
 - `-y, --yes`：自动确认（跳过确认提示）
 - `--local-merge`：显式声明使用本地 merge 模式（当前为默认行为，会切换分支并生成 merge commit）
-- `--remote-merge`：改为远程 PR/MR 模式；会先推送源分支，再通过 API 创建合并请求；若发生冲突会暂停，并输出明确失败原因
+- `-r, --remote-merge`：改为远程 PR/MR 模式；会先推送源分支，再通过 API 创建合并请求；若发生冲突会暂停，并输出明确失败原因
 - `--ai-commit`：push 前自动执行 AI commit
 - `--ai-profile <name>`：指定 AI profile（用于 `--ai-commit`）
 - `--pull-main`：提交前同步主分支到当前分支

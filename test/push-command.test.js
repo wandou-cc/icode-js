@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { resolvePushWorkflowOptions } from '../src/commands/push.js'
+import { parsePushCommandArgs, resolvePushWorkflowOptions } from '../src/commands/push.js'
 
 test('push options only enable boolean flags when passed on CLI', () => {
   const options = resolvePushWorkflowOptions(
@@ -84,4 +84,11 @@ test('push options support explicit remote merge flag', () => {
   )
 
   assert.equal(options.remoteMerge, true)
+})
+
+test('push command parses -r as remote merge flag', () => {
+  const parsed = parsePushCommandArgs(['release', '-r'])
+
+  assert.deepEqual(parsed.positionals, ['release'])
+  assert.equal(parsed.values['remote-merge'], true)
 })

@@ -9,7 +9,8 @@ const LEGACY_ALIAS_MAP = new Map([
   ['--mergeMain', '--merge-main'],
   ['--aiReview', '--ai-review'],
   ['--aiProfile', '--ai-profile'],
-  ['--aiCommit', '--ai-commit']
+  ['--aiCommit', '--ai-commit'],
+  ['--remoteMerge', '--remote-merge']
 ])
 
 export function normalizeLegacyArgs(argv = []) {

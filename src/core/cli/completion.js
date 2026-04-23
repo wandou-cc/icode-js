@@ -93,6 +93,7 @@ const ROOT_COMPLETION_SPEC = {
         { long: '--message', short: '-m', valueSource: 'text' },
         { long: '--yes', short: '-y' },
         { long: '--local-merge' },
+        { long: '--remote-merge', short: '-r' },
         { long: '--ai-commit' },
         { long: '--ai-profile', valueSource: 'ai-profile' },
         { long: '--help', short: '-h' },
