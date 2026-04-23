@@ -1,80 +1,42 @@
 import { IcodeError } from './errors.js'
+import { requestGitLabRemoteMerge, resolveGitLabProjectUrlFromRemote } from './remote-merge/providers/gitlab.js'
 
-function normalizeReason(payload, fallback) {
-  const candidates = [
-    payload?.reason,
-    payload?.message,
-    payload?.error,
-    payload?.detail
-  ]
-
-  for (const item of candidates) {
-    if (typeof item === 'string' && item.trim()) {
-      return item.trim()
-    }
+const REMOTE_MERGE_PROVIDERS = {
+  gitlab: {
+    requestRemoteMerge: requestGitLabRemoteMerge,
+    resolveProjectUrlFromRemote: resolveGitLabProjectUrlFromRemote
   }
-
-  return fallback
 }
 
-export async function requestRemoteMerge(options = {}) {
-  const apiKey = String(options.apiKey || '').trim()
-  if (!apiKey) {
-    throw new IcodeError('远程合并缺少 apiKey', {
-      code: 'REMOTE_MERGE_API_KEY_EMPTY',
+// 按 provider 读取远程合并实现，缺失或不支持时统一抛出明确错误。
+function getRemoteMergeProvider(provider) {
+  const normalizedProvider = String(provider || '').trim()
+  if (!normalizedProvider) {
+    throw new IcodeError('远程合并缺少 provider', {
+      code: 'REMOTE_MERGE_PROVIDER_EMPTY',
       exitCode: 2
     })
   }
 
-  const endpoint = process.env.ICODE_REMOTE_MERGE_URL || 'https://api.icodejs.com/v1/merge'
-  let response
-  try {
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        provider: options.provider || '',
-        sourceBranch: options.sourceBranch,
-        targetBranch: options.targetBranch,
-        repoRoot: options.repoRoot,
-        noVerify: options.noVerify === true
-      })
-    })
-  } catch (error) {
-    throw new IcodeError(`远程合并请求失败: ${error?.message || '未知网络错误'}`, {
-      code: 'REMOTE_MERGE_FETCH_ERROR',
-      exitCode: 2,
-      cause: error
+  const handler = REMOTE_MERGE_PROVIDERS[normalizedProvider]
+  if (!handler) {
+    throw new IcodeError(`当前仅支持: ${Object.keys(REMOTE_MERGE_PROVIDERS).join(', ')}，收到 provider=${normalizedProvider}`, {
+      code: 'REMOTE_MERGE_PROVIDER_UNSUPPORTED',
+      exitCode: 2
     })
   }
 
-  let payload = null
-  let rawText = ''
+  return handler
+}
 
-  try {
-    rawText = await response.text()
-    payload = rawText ? JSON.parse(rawText) : null
-  } catch {
-    payload = null
-  }
+// 统一根据 provider 从 remote URL 解析项目地址，避免工作流层感知平台细节。
+export function resolveRemoteMergeProjectUrl(options = {}) {
+  const handler = getRemoteMergeProvider(options.provider)
+  return handler.resolveProjectUrlFromRemote(options.remoteUrl || '')
+}
 
-  if (!response.ok) {
-    return {
-      ok: false,
-      conflict: response.status === 409,
-      status: response.status,
-      reason: normalizeReason(payload, `HTTP ${response.status}${rawText ? `: ${rawText.trim()}` : ''}`)
-    }
-  }
-
-  return {
-    ok: payload?.ok !== false,
-    conflict: payload?.conflict === true,
-    status: response.status,
-    reason: normalizeReason(payload, '远程合并已完成'),
-    payload
-  }
+// 统一按 provider 调度远程合并请求，后续新增平台只需补 provider 实现。
+export async function requestRemoteMerge(options = {}) {
+  const handler = getRemoteMergeProvider(options.provider)
+  return handler.requestRemoteMerge(options)
 }

@@ -29,7 +29,7 @@ Options:
   -m, --message <msg>         提交信息（未填会提示输入）
   -y, --yes                   自动确认（跳过确认提示）
   --local-merge               使用本地 merge 模式（默认，会切换分支并生成 merge commit）
-  --remote-merge              使用远程 merge API 模式（需先配置密钥）
+  --remote-merge              使用远程 PR/MR 合并模式（默认启用项目远程合并）
   --ai-commit                 push 前自动执行 AI commit（会参考本地 hook/commitlint 规范）
   --ai-profile <name>         指定 AI profile（用于 --ai-commit）
   --pull-main                 提交前将主分支同步到当前分支
@@ -42,6 +42,7 @@ Options:
 Notes:
   默认使用本地 merge 模式。
   未指定 target 时默认处理当前分支。
+  远程 merge 通过 PR/MR API 发起，不会本地切换到目标分支。
   远程 merge 若出现冲突会暂停流程，并保留明确失败原因。
   布尔开关仅在命令行显式传入时生效（如 --ai-commit / --pull-main / --no-verify / -y）。
 `)
@@ -71,6 +72,14 @@ function resolveStringOption(cliValue, configValue, fallback = '') {
     return configValue
   }
   return fallback
+}
+
+// 统一输出 push 结果摘要，失败分支会追加具体原因，方便定位问题目标分支。
+function printPushSummary(summary = []) {
+  summary.forEach((item) => {
+    const reason = typeof item.reason === 'string' && item.reason.trim() ? ` - ${item.reason.trim()}` : ''
+    logger.info(`[结果] ${item.branch}: ${formatBranchStatus(item.status)}${reason}`)
+  })
 }
 
 export function resolvePushWorkflowOptions(parsedValues, parsedPositionals, scopedOptions = {}) {
@@ -118,14 +127,20 @@ export async function runPushCommand(rawArgs) {
     return
   }
 
-  const result = await runPushWorkflow(resolvePushWorkflowOptions(parsed.values, parsed.positionals, scopedOptions))
+  let result
+  try {
+    result = await runPushWorkflow(resolvePushWorkflowOptions(parsed.values, parsed.positionals, scopedOptions))
+  } catch (error) {
+    if (Array.isArray(error?.meta?.summary) && error.meta.summary.length) {
+      printPushSummary(error.meta.summary)
+    }
+    throw error
+  }
 
   if (result.canceled) {
     return
   }
 
-  result.summary.forEach((item) => {
-    logger.info(`[结果] ${item.branch}: ${formatBranchStatus(item.status)}`)
-  })
+  printPushSummary(result.summary)
   logger.success(`push 完成，共处理 ${result.summary.length} 个分支。`)
 }

@@ -9,6 +9,22 @@ function cleanOutput(text) {
   return (text || '').trim()
 }
 
+function parseGitLogRecords(output) {
+  return output
+    .split('\x1e')
+    .map((record) => record.trim())
+    .filter(Boolean)
+    .map((record) => {
+      const [hash = '', subject = '', body = ''] = record.split('\x1f')
+      return {
+        hash: hash.trim(),
+        subject: subject.trim(),
+        body: body.trim()
+      }
+    })
+    .filter((item) => item.hash && item.subject)
+}
+
 export class GitService {
   constructor(context) {
     this.context = context
@@ -75,6 +91,13 @@ export class GitService {
       allowFailure: true
     })
     return result.exitCode === 0
+  }
+
+  async getRemoteUrl(remoteName = 'origin') {
+    const result = await this.exec(['remote', 'get-url', remoteName], {
+      allowFailure: true
+    })
+    return cleanOutput(result.stdout)
   }
 
   async listLocalBranches() {
@@ -429,6 +452,23 @@ export class GitService {
       .split('\n')
       .map((item) => item.trim())
       .filter(Boolean)
+  }
+
+  // 读取指定 range 内的提交信息，返回按时间顺序排列的 hash/subject/body 列表。
+  async listCommitMessages(rangeSpec) {
+    const result = await this.exec(['log', '--reverse', '--format=%H%x1f%s%x1f%b%x1e', rangeSpec], {
+      allowFailure: true
+    })
+    return parseGitLogRecords(result.stdout)
+  }
+
+  // 读取单个 ref 的最新提交信息，供无法从 range 提取提交时回退使用。
+  async getCommitMessage(ref = 'HEAD') {
+    const result = await this.exec(['log', '-1', '--format=%H%x1f%s%x1f%b%x1e', ref], {
+      allowFailure: true
+    })
+    const commits = parseGitLogRecords(result.stdout)
+    return commits[0] || null
   }
 
   async cherryPick(commits) {

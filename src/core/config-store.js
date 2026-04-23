@@ -193,8 +193,8 @@ export function getRepoPolicy(repoRootPath) {
   return {
     protectedBranches: [],
     remoteMerge: {
-      enabled: false,
-      apiKey: ''
+      enabled: true,
+      projectUrl: ''
     },
     ...(config.repositories[key] || {})
   }
@@ -206,8 +206,8 @@ export function setRepoPolicy(repoRootPath, policy) {
   config.repositories[key] = {
     protectedBranches: [],
     remoteMerge: {
-      enabled: false,
-      apiKey: ''
+      enabled: true,
+      projectUrl: ''
     },
     ...(config.repositories[key] || {}),
     ...policy

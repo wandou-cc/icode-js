@@ -28,6 +28,7 @@ import { IcodeError } from '../core/errors.js'
 import { resolveGitContext } from '../core/git-context.js'
 import { logger } from '../core/logger.js'
 
+// 输出 config 命令帮助，并展示当前支持的远程合并配置方式。
 function printHelp() {
   process.stdout.write(`
 Usage:
@@ -72,6 +73,7 @@ function maskSecret(secret) {
   return `${raw.slice(0, 4)}****${raw.slice(-4)}`
 }
 
+// 输出 platform 子命令帮助，明确 remote-merge 仅需平台名与密钥。
 function printPlatformHelp() {
   process.stdout.write(`
 Usage:
@@ -79,7 +81,7 @@ Usage:
 
 Subcommands:
   remote-merge show
-  remote-merge set --provider <name> --api-key <key>
+  remote-merge set --provider gitlab --api-key <key>
 
 Examples:
   icode config platform remote-merge show
@@ -87,6 +89,7 @@ Examples:
 `)
 }
 
+// 处理平台级远程合并配置，当前只接受 GitLab 平台密钥写入。
 async function runPlatformConfigCommand(args) {
   if (!args.length || args[0] === '-h' || args[0] === '--help') {
     printPlatformHelp()
@@ -134,6 +137,13 @@ async function runPlatformConfigCommand(args) {
     if (!apiKey) {
       throw new IcodeError('缺少 --api-key，示例: icode config platform remote-merge set --provider gitlab --api-key xxx', {
         code: 'CONFIG_PLATFORM_API_KEY_REQUIRED',
+        exitCode: 2
+      })
+    }
+
+    if (provider !== 'gitlab') {
+      throw new IcodeError(`platform remote-merge 当前仅支持 gitlab，收到 provider=${provider}`, {
+        code: 'CONFIG_PLATFORM_PROVIDER_UNSUPPORTED',
         exitCode: 2
       })
     }

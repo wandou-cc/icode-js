@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { readConfig } from './config-store.js'
 import { IcodeError } from './errors.js'
+import { confirm } from './prompt.js'
 import { runCommand } from './shell.js'
 
 function cleanOutput(text) {
@@ -11,6 +12,24 @@ function cleanOutput(text) {
 async function commandOutput(cwd, args, allowFailure = false) {
   const result = await runCommand('git', args, { cwd, allowFailure })
   return result
+}
+
+async function ensureGitRepository(cwd, options = {}) {
+  const confirmInit = options.confirm || confirm
+  const inside = await commandOutput(cwd, ['rev-parse', '--is-inside-work-tree'], true)
+  if (inside.exitCode === 0 && cleanOutput(inside.stdout) === 'true') {
+    return
+  }
+
+  const shouldInit = await confirmInit('当前目录还没有初始化 Git 仓库，是否现在执行 git init？')
+  if (!shouldInit) {
+    throw new IcodeError('当前目录不在 Git 仓库中。', {
+      code: 'NOT_IN_GIT_REPO',
+      exitCode: 2
+    })
+  }
+
+  await commandOutput(cwd, ['init'])
 }
 
 async function detectDefaultBranch(topLevelPath, fallbackCandidates = ['main', 'master']) {
@@ -44,13 +63,9 @@ export async function resolveGitContext(options = {}) {
   const configRepoMode = config.defaults?.repoMode || 'auto'
   const repoMode = options.repoMode || configRepoMode
 
-  const inside = await commandOutput(cwd, ['rev-parse', '--is-inside-work-tree'], true)
-  if (inside.exitCode !== 0 || cleanOutput(inside.stdout) !== 'true') {
-    throw new IcodeError('当前目录不在 Git 仓库中。', {
-      code: 'NOT_IN_GIT_REPO',
-      exitCode: 2
-    })
-  }
+  await ensureGitRepository(cwd, {
+    confirm: options.confirm
+  })
 
   const topLevelPath = cleanOutput((await commandOutput(cwd, ['rev-parse', '--show-toplevel'])).stdout)
   const gitDirRaw = cleanOutput((await commandOutput(cwd, ['rev-parse', '--git-dir'])).stdout)

@@ -32,13 +32,13 @@ test('config-store read/write basic flow', () => {
     protectedBranches: ['main', 'release'],
     remoteMerge: {
       enabled: true,
-      apiKey: 'rm_test_key'
+      projectUrl: 'https://gitlab.example.com/group/project'
     }
   })
   const policy = getRepoPolicy('/tmp/my-repo')
   assert.deepEqual(policy.protectedBranches.sort(), ['main', 'release'])
   assert.equal(policy.remoteMerge.enabled, true)
-  assert.equal(policy.remoteMerge.apiKey, 'rm_test_key')
+  assert.equal(policy.remoteMerge.projectUrl, 'https://gitlab.example.com/group/project')
 
   setPlatformConfig('remoteMerge', {
     provider: 'gitlab',
@@ -47,6 +47,10 @@ test('config-store read/write basic flow', () => {
   const platformConfig = getPlatformConfig('remoteMerge')
   assert.equal(platformConfig.provider, 'gitlab')
   assert.equal(platformConfig.apiKey, 'platform_key')
+
+  const defaultPolicy = getRepoPolicy('/tmp/default-repo')
+  assert.equal(defaultPolicy.remoteMerge.enabled, true)
+  assert.equal(defaultPolicy.remoteMerge.projectUrl, '')
 
   deleteValue('defaults.repoMode')
   const afterDelete = readConfig()

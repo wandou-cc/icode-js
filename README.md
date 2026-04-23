@@ -140,7 +140,7 @@ icode push release test -m "feat: batch publish" -y # 默认本地 merge 推送�
 - 若仓库存在 husky/hooks/commitlint 规则，AI commit 会先扫描本地规范再生成提交信息
 - 支持把当前分支合并到多个目标分支
 - 默认使用本地 merge 模式（会生成 merge commit）
-- 支持远程 merge API 模式（需配置远程合并密钥）
+- 支持远程 PR/MR API 模式（需配置平台密钥）
 - 支持受保护分支策略（通过 `icode config protect ...` 管理）
 
 参数说明：
@@ -149,7 +149,7 @@ icode push release test -m "feat: batch publish" -y # 默认本地 merge 推送�
 - `-m, --message <msg>`：提交信息（未填会提示输入）
 - `-y, --yes`：自动确认（跳过确认提示）
 - `--local-merge`：显式声明使用本地 merge 模式（当前为默认行为，会切换分支并生成 merge commit）
-- `--remote-merge`：改为远程 merge API 模式；若发生冲突会暂停，并输出明确失败原因
+- `--remote-merge`：改为远程 PR/MR 模式；会先推送源分支，再通过 API 创建合并请求；若发生冲突会暂停，并输出明确失败原因
 - `--ai-commit`：push 前自动执行 AI commit
 - `--ai-profile <name>`：指定 AI profile（用于 `--ai-commit`）
 - `--pull-main`：提交前同步主分支到当前分支
@@ -166,13 +166,14 @@ icode push release test -m "feat: batch publish" -y # 默认本地 merge 推送�
 
 ```bash
 icode config platform remote-merge set --provider gitlab --api-key rm_xxx
-icode config set repositories./绝对/仓库/路径.remoteMerge.enabled true
 ```
 
 建议：
 - 密钥按平台维度管理，例如 GitLab / GitHub / 自建平台。
-- 项目/仓库只控制“是否启用远程合并”，不再单独存放密钥。
-- 这样更符合密钥复用与安全边界，避免多个仓库重复维护同一平台密钥。
+- GitLab API 地址固定为仓库 `origin` 对应站点的 `/api/v4`，无需再单独配置服务地址。
+- 项目/仓库默认启用远程合并；如个别仓库不希望启用，可显式设置 `repositories.<repo>.remoteMerge.enabled=false`。
+- 远程合并会直接根据 `origin` 自动提取 GitLab 项目地址；若无法识别，会提示你修正仓库 remote 配置。
+- 这样更符合密钥复用与安全边界，避免多个仓库重复维护同一平台 API 地址。
 
 ### ai
 
