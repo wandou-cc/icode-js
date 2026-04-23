@@ -259,18 +259,20 @@ icode tag [--name <tag>] [--message <msg>] [--from <ref>]
 ### undo
 
 ```bash
-icode undo [--mode revert|soft|mixed|hard] [--ref <ref>] [--recover continue|abort|keep]
+icode undo [ref] [--mode revert|soft|mixed|hard] [--ref <ref>] [--hash <hash>] [--recover continue|abort|keep]
 ```
 
 - 向导式撤销命令（交互选择回滚策略）
 - 适合新人或低频 Git 操作场景
-- 也支持非交互参数：`--mode` + `--ref`
+- 也支持非交互参数：`--mode` + `--ref` / `--hash`
+- 支持用位置参数指定 commit hash，例如：`icode undo a1b2c3d --mode revert -y`
 - 检测到 revert/cherry-pick 冲突时，会提示继续或中止
 
 参数说明：
 
 - `--mode <mode>`：回滚模式（`revert|soft|mixed|hard`）
 - `--ref <ref>`：回滚目标，默认按 mode 自动给出
+- `--hash <hash>`：按 commit hash 指定回滚目标（等同 `--ref`）
 - `--recover <action>`：冲突恢复策略（`continue|abort|keep`）
 - `-y, --yes`：自动确认（跳过确认提示）
 - `--repo-mode auto|strict`：仓库模式（自动继承父仓库/禁止继承）

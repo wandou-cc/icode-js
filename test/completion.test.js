@@ -26,6 +26,16 @@ test('completion supports inline option values', () => {
   assert.deepEqual(candidates, ['--mode=revert'])
 })
 
+test('completion suggests refs for undo positional target', () => {
+  const candidates = getCompletionCandidates(['undo'], 'a1', {
+    listBranchCandidates: () => [],
+    listRefCandidates: () => ['a1b2c3d', 'HEAD~1'],
+    listAiProfileCandidates: () => []
+  })
+
+  assert.deepEqual(candidates, ['a1b2c3d'])
+})
+
 test('completion suggests branch candidates for repeated positionals', () => {
   const candidates = getCompletionCandidates(['push'], 're', {
     listBranchCandidates: () => ['release', 'release-hotfix', 'main'],

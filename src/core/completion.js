@@ -128,9 +128,11 @@ const ROOT_COMPLETION_SPEC = {
       ]
     },
     undo: {
+      positionals: [{ valueSource: 'ref' }],
       options: [
         { long: '--mode', valueSource: 'undo-mode' },
         { long: '--ref', valueSource: 'ref' },
+        { long: '--hash', valueSource: 'ref' },
         { long: '--recover', valueSource: 'undo-recover' },
         { long: '--yes', short: '-y' },
         { long: '--repo-mode', valueSource: 'repo-mode' },

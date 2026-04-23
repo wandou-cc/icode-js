@@ -247,6 +247,10 @@ async function handleRevertConflict(options, mode, ref) {
   }
 }
 
+/**
+ * 执行 undo 工作流。
+ * 输入为已归一化的回滚模式、目标 ref/hash、恢复策略和仓库选项，输出为执行结果或取消状态。
+ */
 export async function runUndoWorkflow(options) {
   const pendingResult = await resolvePendingOperation(options)
   if (pendingResult) {
@@ -255,6 +259,7 @@ export async function runUndoWorkflow(options) {
 
   let mode = options.mode?.trim()
   let ref = options.ref?.trim()
+  const hasExplicitRef = Boolean(ref)
 
   if (!mode) {
     const selected = await chooseOne('请选择回滚策略：', UNDO_OPTIONS, 0)
@@ -267,7 +272,9 @@ export async function runUndoWorkflow(options) {
     }
 
     mode = parsed.mode
-    ref = parsed.ref
+    if (!hasExplicitRef) {
+      ref = parsed.ref
+    }
   }
 
   const defaultRef = resolveDefaultRef(mode)

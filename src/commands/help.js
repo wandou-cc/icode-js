@@ -43,6 +43,7 @@ Examples:
   icode push release test -m "feat: keep merge commit" --local-merge -y
   icode sync --all-local --merge-main
   icode clean --remote --force -y
+  icode undo a1b2c3d --mode revert -y
   icode undo --mode revert --ref HEAD~1 -y
   icode undo --recover abort
   icode migrate feature/login release --push -y
