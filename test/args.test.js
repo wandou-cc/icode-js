@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { normalizeLegacyArgs } from '../src/core/args.js'
+import { normalizeLegacyArgs } from '../src/core/cli/args.js'
 
 test('normalizeLegacyArgs maps legacy camel-case flags', () => {
   const normalized = normalizeLegacyArgs([

@@ -13,9 +13,9 @@ import { runSyncCommand } from './commands/sync.js'
 import { runTagCommand } from './commands/tag.js'
 import { runUndoCommand } from './commands/undo.js'
 import { asIcodeError } from './core/errors.js'
-import { logger } from './core/logger.js'
-import { normalizeLegacyArgs } from './core/args.js'
-import { notifyIfCliUpdateAvailable } from './core/update-notifier.js'
+import { normalizeLegacyArgs } from './core/cli/args.js'
+import { notifyIfCliUpdateAvailable } from './core/cli/update-notifier.js'
+import { logger } from './core/tools/logger.js'
 
 function isTruthy(value) {
   const normalized = String(value || '').trim().toLowerCase()

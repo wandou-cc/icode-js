@@ -3,11 +3,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { runCommand } from '../src/core/shell.js'
-import { getRepoPolicy, setPlatformConfig, setRepoPolicy } from '../src/core/config-store.js'
-import { upsertAiProfile, useAiProfile } from '../src/core/ai-config.js'
+import { runCommand } from '../src/core/commands/shell.js'
+import { upsertAiProfile, useAiProfile } from '../src/core/ai/config.js'
+import { getRepoPolicy, setPlatformConfig, setRepoPolicy } from '../src/core/config/store.js'
 import { runPushWorkflow } from '../src/workflows/push-workflow.js'
-import { GitService } from '../src/core/git-service.js'
+import { GitService } from '../src/core/git/service.js'
 
 async function git(cwd, args, options = {}) {
   return runCommand('git', args, { cwd, ...options })

@@ -1,11 +1,11 @@
-import { getPlatformConfig, getRepoPolicy } from '../core/config-store.js'
+import { formatAiCommitSummary } from '../core/ai/commit-summary.js'
+import { getPlatformConfig, getRepoPolicy } from '../core/config/store.js'
 import { IcodeError } from '../core/errors.js'
-import { GitService } from '../core/git-service.js'
-import { resolveGitContext } from '../core/git-context.js'
-import { formatAiCommitSummary } from '../core/ai-commit-summary.js'
-import { logger } from '../core/logger.js'
-import { confirm, input } from '../core/prompts.js'
-import { requestRemoteMerge, resolveRemoteMergeProjectUrl } from '../core/remote-merge-client.js'
+import { resolveGitContext } from '../core/git/context.js'
+import { GitService } from '../core/git/service.js'
+import { confirm, input } from '../core/tools/interactive.js'
+import { requestRemoteMerge, resolveRemoteMergeProjectUrl } from '../core/remote-merge/client.js'
+import { logger } from '../core/tools/logger.js'
 import { runAiCommitWorkflow } from './ai-commit-workflow.js'
 
 function uniqueBranches(branches) {

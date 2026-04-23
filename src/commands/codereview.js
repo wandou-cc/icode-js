@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util'
-import { logger } from '../core/logger.js'
+import { logger } from '../core/tools/logger.js'
 import { runAiCodeReviewWorkflow } from '../workflows/ai-codereview-workflow.js'
 
 function printHelp() {

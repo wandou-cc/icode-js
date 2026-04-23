@@ -12,7 +12,7 @@ import {
   setPlatformConfig,
   setRepoPolicy,
   setValue
-} from '../src/core/config-store.js'
+} from '../src/core/config/store.js'
 
 test('config-store read/write basic flow', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-config-test-'))

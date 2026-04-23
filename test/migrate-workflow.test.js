@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { runCommand } from '../src/core/shell.js'
+import { runCommand } from '../src/core/commands/shell.js'
 import { runMigrateWorkflow } from '../src/workflows/migrate-workflow.js'
 
 test('migrate-workflow supports selected commits migration', async () => {

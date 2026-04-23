@@ -1,15 +1,44 @@
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 
+/**
+ * 判断当前 stdin/stdout 是否连接到交互式终端。
+ * 输入为空，输出为布尔值。
+ */
 function isInteractive() {
   return Boolean(stdin.isTTY && stdout.isTTY)
 }
 
+/**
+ * 对外暴露交互终端判断，供工作流决定是否进入交互模式。
+ * 输入为空，输出为布尔值。
+ */
 export function isInteractiveTerminal() {
   return isInteractive()
 }
 
-export async function confirm(message, defaultValue = true) {
+/**
+ * 归一化 confirm 的默认值配置，兼容布尔值与 options.defaultValue 两种调用方式。
+ * 输入为 confirm 第二参数，输出为布尔默认值。
+ */
+function resolveConfirmDefaultValue(optionsOrDefaultValue) {
+  if (typeof optionsOrDefaultValue === 'boolean') {
+    return optionsOrDefaultValue
+  }
+
+  if (optionsOrDefaultValue && typeof optionsOrDefaultValue === 'object') {
+    return optionsOrDefaultValue.defaultValue === true
+  }
+
+  return false
+}
+
+/**
+ * 读取确认输入并返回布尔结果；非交互环境直接返回默认值。
+ * 输入为提示文案与默认值配置，输出为用户是否确认。
+ */
+export async function confirm(message, optionsOrDefaultValue = false) {
+  const defaultValue = resolveConfirmDefaultValue(optionsOrDefaultValue)
   if (!isInteractive()) {
     return defaultValue
   }
@@ -23,17 +52,21 @@ export async function confirm(message, defaultValue = true) {
     return defaultValue
   }
 
-  if (['y', 'yes'].includes(answer)) {
+  if (['y', 'yes', '1', 'true', 'ok', 'sure', '是'].includes(answer)) {
     return true
   }
 
-  if (['n', 'no'].includes(answer)) {
+  if (['n', 'no', '0', 'false', '否'].includes(answer)) {
     return false
   }
 
   return defaultValue
 }
 
+/**
+ * 读取一行文本输入；非交互环境直接返回默认值。
+ * 输入为提示文案与默认值，输出为归一化后的文本。
+ */
 export async function input(message, defaultValue = '') {
   if (!isInteractive()) {
     return defaultValue
@@ -46,6 +79,10 @@ export async function input(message, defaultValue = '') {
   return normalized || defaultValue
 }
 
+/**
+ * 在给定选项中返回单个值；非交互环境返回默认索引对应值。
+ * 输入为提示文案、选项列表与默认索引，输出为选中的 value。
+ */
 export async function chooseOne(message, choices, defaultIndex = 0) {
   if (!Array.isArray(choices) || choices.length === 0) {
     throw new Error('chooseOne 需要至少一个可选项')
@@ -77,6 +114,10 @@ export async function chooseOne(message, choices, defaultIndex = 0) {
   return choices[numeric - 1].value
 }
 
+/**
+ * 在给定选项中进行多选；非交互环境返回默认值集合。
+ * 输入为提示文案、选项列表与多选配置，输出为选中的 value 数组或 null。
+ */
 export async function chooseMany(message, choices, options = {}) {
   if (!Array.isArray(choices) || choices.length === 0) {
     throw new Error('chooseMany 需要至少一个可选项')
@@ -119,8 +160,8 @@ export async function chooseMany(message, choices, options = {}) {
     })
 
     const defaultChoiceValue = selected.size >= minSelections ? doneValue : choices[0].value
-    const defaultIndex = Math.max(0, menuChoices.findIndex((item) => item.value === defaultChoiceValue))
-    const selectedAction = await chooseOne(`${message}`, menuChoices, defaultIndex)
+    const resolvedDefaultIndex = Math.max(0, menuChoices.findIndex((item) => item.value === defaultChoiceValue))
+    const selectedAction = await chooseOne(message, menuChoices, resolvedDefaultIndex)
 
     if (selectedAction === cancelValue) {
       return null

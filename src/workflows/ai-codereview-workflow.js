@@ -1,8 +1,8 @@
-import { askAi } from '../core/ai-client.js'
-import { resolveAiDiffRange } from '../core/ai-diff-range.js'
+import { askAi } from '../core/ai/client.js'
+import { resolveAiDiffRange } from '../core/ai/diff-range.js'
 import { IcodeError } from '../core/errors.js'
-import { resolveGitContext } from '../core/git-context.js'
-import { GitService } from '../core/git-service.js'
+import { resolveGitContext } from '../core/git/context.js'
+import { GitService } from '../core/git/service.js'
 
 function truncate(value, limit) {
   const text = value || ''

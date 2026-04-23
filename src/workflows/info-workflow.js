@@ -1,7 +1,7 @@
-import { getAiConfig } from '../core/ai-config.js'
-import { getConfigFilePath, getRepoPolicy } from '../core/config-store.js'
-import { resolveGitContext } from '../core/git-context.js'
-import { runCommand } from '../core/shell.js'
+import { getAiConfig } from '../core/ai/config.js'
+import { getConfigFilePath, getRepoPolicy } from '../core/config/store.js'
+import { resolveGitContext } from '../core/git/context.js'
+import { runCommand } from '../core/commands/shell.js'
 
 export async function runInfoWorkflow(options) {
   const context = await resolveGitContext({

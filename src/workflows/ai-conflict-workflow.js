@@ -1,10 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { askAi } from '../core/ai-client.js'
+import { askAi } from '../core/ai/client.js'
 import { IcodeError } from '../core/errors.js'
-import { resolveGitContext } from '../core/git-context.js'
-import { GitService } from '../core/git-service.js'
-import { logger } from '../core/logger.js'
+import { resolveGitContext } from '../core/git/context.js'
+import { GitService } from '../core/git/service.js'
+import { logger } from '../core/tools/logger.js'
 
 function extractConflictBlocks(content, maxBlocks = 3, maxLines = 80) {
   const lines = content.split('\n')

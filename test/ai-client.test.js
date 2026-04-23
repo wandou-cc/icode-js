@@ -3,8 +3,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { askAi, askAiJson } from '../src/core/ai-client.js'
-import { upsertAiProfile, useAiProfile } from '../src/core/ai-config.js'
+import { askAi, askAiJson } from '../src/core/ai/client.js'
+import { upsertAiProfile, useAiProfile } from '../src/core/ai/config.js'
 
 test('ai-client wraps network fetch failures with profile and endpoint context', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-client-test-'))

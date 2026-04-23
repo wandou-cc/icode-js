@@ -1,5 +1,5 @@
-import { IcodeError } from './errors.js'
-import { readConfig, writeConfig } from './config-store.js'
+import { IcodeError } from '../errors.js'
+import { readConfig, writeConfig } from '../config/store.js'
 
 const DEFAULT_PROFILE = {
   provider: 'custom',

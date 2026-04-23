@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util'
 import { IcodeError } from '../core/errors.js'
-import { logger } from '../core/logger.js'
+import { logger } from '../core/tools/logger.js'
 import { runUndoWorkflow } from '../workflows/undo-workflow.js'
 
 /**

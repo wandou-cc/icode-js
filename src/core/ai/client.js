@@ -1,6 +1,6 @@
-import { IcodeError } from './errors.js'
-import { getAiProfile } from './ai-config.js'
-import { withSpinner } from './loading.js'
+import { IcodeError } from '../errors.js'
+import { withSpinner } from '../tools/loading.js'
+import { getAiProfile } from './config.js'
 
 function trimSlash(value) {
   return value.replace(/\/+$/, '')

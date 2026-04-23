@@ -1,10 +1,10 @@
 import { IcodeError } from '../core/errors.js'
-import { resolveGitContext } from '../core/git-context.js'
-import { GitService } from '../core/git-service.js'
-import { logger } from '../core/logger.js'
-import { askAiJson } from '../core/ai-client.js'
-import { scanCommitConventions } from '../core/commit-conventions.js'
-import { confirm } from '../core/prompts.js'
+import { askAiJson } from '../core/ai/client.js'
+import { resolveGitContext } from '../core/git/context.js'
+import { scanCommitConventions } from '../core/git/commit-conventions.js'
+import { GitService } from '../core/git/service.js'
+import { confirm } from '../core/tools/interactive.js'
+import { logger } from '../core/tools/logger.js'
 
 function normalizeCommitType(value) {
   const allowed = new Set(['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'build', 'ci', 'revert'])

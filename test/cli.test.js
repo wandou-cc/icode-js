@@ -4,8 +4,8 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { runCli } from '../src/cli.js'
-import { resolveGitContext } from '../src/core/git-context.js'
-import { runCommand } from '../src/core/shell.js'
+import { resolveGitContext } from '../src/core/git/context.js'
+import { runCommand } from '../src/core/commands/shell.js'
 
 test('runCli calls update notifier after command succeeds', async () => {
   let commandCalled = false

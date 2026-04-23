@@ -3,8 +3,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { runCommand } from '../src/core/shell.js'
-import { upsertAiProfile, useAiProfile } from '../src/core/ai-config.js'
+import { runCommand } from '../src/core/commands/shell.js'
+import { upsertAiProfile, useAiProfile } from '../src/core/ai/config.js'
 import { runAiCommitWorkflow } from '../src/workflows/ai-commit-workflow.js'
 
 async function git(cwd, args, options = {}) {

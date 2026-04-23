@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { IcodeError } from './errors.js'
+import { IcodeError } from '../errors.js'
 
 const DEFAULT_CONFIG = {
   version: 1,

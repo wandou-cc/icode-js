@@ -1,5 +1,5 @@
-import { IcodeError } from './errors.js'
-import { logger } from './logger.js'
+import { IcodeError } from '../errors.js'
+import { logger } from '../tools/logger.js'
 
 function unique(values) {
   return [...new Set(values.filter(Boolean))]

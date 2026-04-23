@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { logger } from '../src/core/logger.js'
+import { logger } from '../src/core/tools/logger.js'
 
 test('logger prefixes every line for multiline success output', () => {
   let captured = ''

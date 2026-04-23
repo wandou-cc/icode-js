@@ -1,8 +1,8 @@
 import { IcodeError } from '../core/errors.js'
-import { resolveGitContext } from '../core/git-context.js'
-import { GitService } from '../core/git-service.js'
-import { logger } from '../core/logger.js'
-import { chooseOne } from '../core/prompts.js'
+import { resolveGitContext } from '../core/git/context.js'
+import { GitService } from '../core/git/service.js'
+import { chooseOne } from '../core/tools/interactive.js'
+import { logger } from '../core/tools/logger.js'
 import { runRollbackWorkflow } from './rollback-workflow.js'
 
 const UNDO_OPTIONS = [

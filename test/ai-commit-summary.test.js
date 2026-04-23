@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { formatAiCommitSummary } from '../src/core/ai-commit-summary.js'
+import { formatAiCommitSummary } from '../src/core/ai/commit-summary.js'
 
 test('formatAiCommitSummary preserves multiline commit message body', () => {
   const summary = formatAiCommitSummary('abc1234', 'feat(cli): support ai commit\n\nline1\nline2')

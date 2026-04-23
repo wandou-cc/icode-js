@@ -1,7 +1,7 @@
 import { IcodeError } from '../core/errors.js'
-import { GitService } from '../core/git-service.js'
-import { resolveGitContext } from '../core/git-context.js'
-import { logger } from '../core/logger.js'
+import { resolveGitContext } from '../core/git/context.js'
+import { GitService } from '../core/git/service.js'
+import { logger } from '../core/tools/logger.js'
 
 export async function runCheckoutWorkflow(input) {
   if (!input.branchName) {

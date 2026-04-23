@@ -1,8 +1,8 @@
 import { IcodeError } from '../core/errors.js'
-import { resolveGitContext } from '../core/git-context.js'
-import { GitService } from '../core/git-service.js'
-import { logger } from '../core/logger.js'
-import { confirm } from '../core/prompts.js'
+import { resolveGitContext } from '../core/git/context.js'
+import { GitService } from '../core/git/service.js'
+import { confirm } from '../core/tools/interactive.js'
+import { logger } from '../core/tools/logger.js'
 
 function unique(list) {
   return [...new Set(list.map((item) => item.trim()).filter(Boolean))]

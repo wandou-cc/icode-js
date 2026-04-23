@@ -1,9 +1,9 @@
-import { IcodeError } from './errors.js'
-import { buildHookHint, detectHookFailure } from './hook-diagnostics.js'
-import { logger } from './logger.js'
-import { runCommand } from './shell.js'
 import fs from 'node:fs'
 import path from 'node:path'
+import { buildHookHint, detectHookFailure } from './hook-diagnostics.js'
+import { runCommand } from '../commands/shell.js'
+import { IcodeError } from '../errors.js'
+import { logger } from '../tools/logger.js'
 
 function cleanOutput(text) {
   return (text || '').trim()

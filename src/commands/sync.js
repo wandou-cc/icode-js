@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util'
-import { normalizeLegacyArgs } from '../core/args.js'
-import { logger } from '../core/logger.js'
+import { normalizeLegacyArgs } from '../core/cli/args.js'
+import { logger } from '../core/tools/logger.js'
 import { runSyncWorkflow } from '../workflows/sync-workflow.js'
 
 function printHelp() {

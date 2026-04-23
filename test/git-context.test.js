@@ -3,8 +3,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { runCommand } from '../src/core/shell.js'
-import { resolveGitContext } from '../src/core/git-context.js'
+import { runCommand } from '../src/core/commands/shell.js'
+import { resolveGitContext } from '../src/core/git/context.js'
 
 test('git-context supports parent repository inheritance in auto mode', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-repo-test-'))

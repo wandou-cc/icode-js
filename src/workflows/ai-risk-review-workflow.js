@@ -1,4 +1,4 @@
-import { askAiJson } from '../core/ai-client.js'
+import { askAiJson } from '../core/ai/client.js'
 
 function normalizeDecision(value) {
   const normalized = (value || '').trim().toLowerCase()

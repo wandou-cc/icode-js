@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { listAiProfiles } from './ai-config.js'
+import { listAiProfiles } from '../ai/config.js'
 
 const REPO_MODE_VALUES = ['auto', 'strict']
 const AI_FORMAT_VALUES = ['openai', 'anthropic', 'ollama']

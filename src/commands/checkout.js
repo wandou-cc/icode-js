@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util'
-import { normalizeLegacyArgs } from '../core/args.js'
-import { logger } from '../core/logger.js'
+import { normalizeLegacyArgs } from '../core/cli/args.js'
+import { logger } from '../core/tools/logger.js'
 import { runCheckoutWorkflow } from '../workflows/checkout-workflow.js'
 
 function printHelp() {

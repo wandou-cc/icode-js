@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { parseArgs } from 'node:util'
-import { askAi } from '../core/ai-client.js'
+import { askAi } from '../core/ai/client.js'
 import {
   getAiCommandOptions,
   getAiProfileForDisplay,
@@ -11,7 +11,7 @@ import {
   upsertAiCommandOptions,
   upsertAiProfile,
   useAiProfile
-} from '../core/ai-config.js'
+} from '../core/ai/config.js'
 import {
   deleteValue,
   getConfigFilePath,
@@ -22,11 +22,11 @@ import {
   setPlatformConfig,
   setRepoPolicy,
   setValue
-} from '../core/config-store.js'
-import { parseConfigValue } from '../core/args.js'
+} from '../core/config/store.js'
+import { parseConfigValue } from '../core/cli/args.js'
 import { IcodeError } from '../core/errors.js'
-import { resolveGitContext } from '../core/git-context.js'
-import { logger } from '../core/logger.js'
+import { resolveGitContext } from '../core/git/context.js'
+import { logger } from '../core/tools/logger.js'
 
 // 输出 config 命令帮助，并展示当前支持的远程合并配置方式。
 function printHelp() {

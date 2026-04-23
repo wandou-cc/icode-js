@@ -12,7 +12,7 @@ import {
   upsertAiCommandOptions,
   upsertAiProfile,
   useAiProfile
-} from '../src/core/ai-config.js'
+} from '../src/core/ai/config.js'
 
 test('ai-config set/use/list profile flow', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-config-test-'))

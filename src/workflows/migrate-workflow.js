@@ -1,8 +1,8 @@
 import { IcodeError } from '../core/errors.js'
-import { resolveGitContext } from '../core/git-context.js'
-import { GitService } from '../core/git-service.js'
-import { logger } from '../core/logger.js'
-import { chooseMany, chooseOne, isInteractiveTerminal } from '../core/prompts.js'
+import { resolveGitContext } from '../core/git/context.js'
+import { GitService } from '../core/git/service.js'
+import { chooseMany, chooseOne, isInteractiveTerminal } from '../core/tools/interactive.js'
+import { logger } from '../core/tools/logger.js'
 
 const INTERACTIVE_COMMIT_LIMIT = 30
 

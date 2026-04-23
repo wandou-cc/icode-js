@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util'
-import { getAiCommandOptions } from '../core/ai-config.js'
-import { logger } from '../core/logger.js'
+import { getAiCommandOptions } from '../core/ai/config.js'
+import { logger } from '../core/tools/logger.js'
 import { runAiExplainWorkflow } from '../workflows/ai-explain-workflow.js'
 
 function printHelp() {

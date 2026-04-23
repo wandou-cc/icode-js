@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util'
-import { normalizeLegacyArgs } from '../core/args.js'
+import { normalizeLegacyArgs } from '../core/cli/args.js'
 import { IcodeError } from '../core/errors.js'
-import { logger } from '../core/logger.js'
+import { logger } from '../core/tools/logger.js'
 import { runMigrateWorkflow } from '../workflows/migrate-workflow.js'
 
 function printHelp() {

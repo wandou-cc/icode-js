@@ -1,5 +1,5 @@
-import { IcodeError } from './errors.js'
-import { requestGitLabRemoteMerge, resolveGitLabProjectUrlFromRemote } from './remote-merge/providers/gitlab.js'
+import { IcodeError } from '../errors.js'
+import { requestGitLabRemoteMerge, resolveGitLabProjectUrlFromRemote } from './providers/gitlab.js'
 
 const REMOTE_MERGE_PROVIDERS = {
   gitlab: {

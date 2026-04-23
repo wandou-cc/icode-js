@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { requestRemoteMerge, resolveRemoteMergeProjectUrl } from '../src/core/remote-merge-client.js'
+import { requestRemoteMerge, resolveRemoteMergeProjectUrl } from '../src/core/remote-merge/client.js'
 
 test('remote-merge-client dispatches project url resolution by provider', () => {
   assert.equal(

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { runCommand } from '../src/core/shell.js'
+import { runCommand } from '../src/core/commands/shell.js'
 
 test('runCommand includes stderr in command failure message', async () => {
   await assert.rejects(

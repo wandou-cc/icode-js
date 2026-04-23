@@ -1,9 +1,9 @@
 import { createRequire } from 'node:module'
-import { logger } from './logger.js'
-import { runCommand } from './shell.js'
+import { runCommand } from '../commands/shell.js'
+import { logger } from '../tools/logger.js'
 
 const require = createRequire(import.meta.url)
-const packageJson = require('../../package.json')
+const packageJson = require('../../../package.json')
 
 /**
  * 规范化版本号，输出仅包含数字段的 semver 主体数组。

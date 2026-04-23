@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util'
 import { IcodeError } from '../core/errors.js'
-import { getCompletionCandidates, renderCompletionScript } from '../core/completion.js'
+import { getCompletionCandidates, renderCompletionScript } from '../core/cli/completion.js'
 
 /**
  * 输出 completion 命令帮助，说明支持的 shell 与安装方式。

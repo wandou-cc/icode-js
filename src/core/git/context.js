@@ -1,9 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { readConfig } from './config-store.js'
-import { IcodeError } from './errors.js'
-import { confirm } from './prompt.js'
-import { runCommand } from './shell.js'
+import { runCommand } from '../commands/shell.js'
+import { readConfig } from '../config/store.js'
+import { IcodeError } from '../errors.js'
+import { confirm } from '../tools/interactive.js'
 
 function cleanOutput(text) {
   return (text || '').trim()

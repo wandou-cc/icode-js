@@ -4,7 +4,7 @@ import {
   fetchLatestPublishedVersion,
   hasNewerVersion,
   notifyIfCliUpdateAvailable
-} from '../src/core/update-notifier.js'
+} from '../src/core/cli/update-notifier.js'
 
 test('hasNewerVersion returns true only when latest version is higher', () => {
   assert.equal(hasNewerVersion('3.0.4', '3.0.5'), true)

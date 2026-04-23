@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getCompletionCandidates, renderCompletionScript } from '../src/core/completion.js'
+import { getCompletionCandidates, renderCompletionScript } from '../src/core/cli/completion.js'
 
 test('completion suggests top-level commands and global flags', () => {
   const candidates = getCompletionCandidates([], 'co')
