@@ -1,6 +1,6 @@
 {
   "name": "@icode-js/icode",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Modern git workflow CLI with robust parent-repo and hook handling",
   "type": "module",
   "author": "C",
