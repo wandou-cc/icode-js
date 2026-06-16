@@ -75,22 +75,23 @@ test('runCli does not call update notifier for hidden completion command', async
   assert.equal(notifierCalled, false)
 })
 
-test('resolveGitContext initializes git repository after user confirmation', async () => {
+test('resolveGitContext rejects non-git directories without implicit init', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-cli-init-'))
 
   try {
-    await resolveGitContext({
-      cwd: tempRoot,
-      confirm: async () => true
-    })
+    await assert.rejects(
+      () => resolveGitContext({
+        cwd: tempRoot
+      }),
+      (error) => error?.code === 'NOT_IN_GIT_REPO'
+    )
 
     const result = await runCommand('git', ['rev-parse', '--is-inside-work-tree'], {
       cwd: tempRoot,
       allowFailure: true
     })
 
-    assert.equal(result.exitCode, 0)
-    assert.equal(result.stdout.trim(), 'true')
+    assert.notEqual(result.exitCode, 0)
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true })
   }

@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util'
 import { getAiCommandOptions } from '../core/ai/config.js'
+import { normalizeLegacyArgs } from '../core/cli/args.js'
 import { logger } from '../core/tools/logger.js'
 import { runAiExplainWorkflow } from '../workflows/ai-explain-workflow.js'
 
@@ -47,10 +48,12 @@ function resolveStringOption(cliValue, configValue, fallback = '') {
   return fallback
 }
 
+// 执行 explain 子命令，输入原始参数，输出 AI 对 diff 的解释；参数会先归一化。
 export async function runExplainCommand(rawArgs) {
   const scopedOptions = getAiCommandOptions('explain')
+  const args = normalizeLegacyArgs(rawArgs)
   const parsed = parseArgs({
-    args: rawArgs,
+    args,
     allowPositionals: true,
     options: {
       base: { type: 'string' },

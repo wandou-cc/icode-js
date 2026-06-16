@@ -20,6 +20,12 @@ test('completion suggests enum values for pending option', () => {
   assert.deepEqual(candidates, ['revert'])
 })
 
+test('completion suggests unified ai commit flag for save', () => {
+  const candidates = getCompletionCandidates(['save'], '--ai')
+
+  assert.deepEqual(candidates, ['--ai-commit'])
+})
+
 test('completion supports inline option values', () => {
   const candidates = getCompletionCandidates(['undo'], '--mode=r')
 

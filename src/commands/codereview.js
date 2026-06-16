@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import { normalizeLegacyArgs } from '../core/cli/args.js'
 import { logger } from '../core/tools/logger.js'
 import { runAiCodeReviewWorkflow } from '../workflows/ai-codereview-workflow.js'
 
@@ -18,9 +19,11 @@ Options:
 `)
 }
 
+// 执行 codereview 子命令，输入原始参数，输出 AI 代码评审结果；参数会先归一化。
 export async function runCodeReviewCommand(rawArgs) {
+  const args = normalizeLegacyArgs(rawArgs)
   const parsed = parseArgs({
-    args: rawArgs,
+    args,
     allowPositionals: true,
     options: {
       base: { type: 'string' },

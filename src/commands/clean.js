@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import { normalizeLegacyArgs } from '../core/cli/args.js'
 import { logger } from '../core/tools/logger.js'
 import { runCleanWorkflow } from '../workflows/clean-workflow.js'
 
@@ -26,9 +27,11 @@ Examples:
 `)
 }
 
+// 执行 clean 子命令，输入原始参数，输出清理结果；参数会先做历史别名归一化。
 export async function runCleanCommand(rawArgs) {
+  const args = normalizeLegacyArgs(rawArgs)
   const parsed = parseArgs({
-    args: rawArgs,
+    args,
     allowPositionals: true,
     options: {
       'merged-target': { type: 'string' },

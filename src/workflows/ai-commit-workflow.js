@@ -1,5 +1,6 @@
 import { IcodeError } from '../core/errors.js'
 import { askAiJson } from '../core/ai/client.js'
+import { buildLimitedDiffPrompt, formatDiffCoverage, summarizeDiffCoverage } from '../core/ai/diff-prompt.js'
 import { resolveGitContext } from '../core/git/context.js'
 import { scanCommitConventions } from '../core/git/commit-conventions.js'
 import { GitService } from '../core/git/service.js'
@@ -74,7 +75,9 @@ export async function runAiCommitWorkflow(options) {
     })
   }
 
-  const limitedDiff = diff.length > 12000 ? `${diff.slice(0, 12000)}\n\n...<truncated>` : diff
+  const limitedDiff = buildLimitedDiffPrompt(diff, {
+    limit: 12000
+  })
   const conventionContext = scanCommitConventions(context)
   const conventionPrompt = conventionContext.hasConventions
     ? `Local commit conventions were detected from repository hooks/config files. Follow these local rules first when generating the commit message.\n\n${conventionContext.summary}\n\n`
@@ -89,7 +92,7 @@ export async function runAiCommitWorkflow(options) {
   const { parsed, text } = await askAiJson(
     {
       systemPrompt: `You are a senior software engineer. Generate a concise Conventional Commit message. Output JSON only. Language: ${language}.`,
-      userPrompt: `${conventionPrompt}Based on the following git diff, return JSON with fields:\n{\"type\":\"feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert\",\"scope\":\"optional\",\"subject\":\"required one-line summary\",\"body\":\"optional details\"}\n\nDiff Source: ${diffSource}\n\nDiff:\n${limitedDiff}`
+      userPrompt: `${conventionPrompt}Based on the following git diff, return JSON with fields:\n{\"type\":\"feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert\",\"scope\":\"optional\",\"subject\":\"required one-line summary\",\"body\":\"optional details\"}\n\nDiff Source: ${diffSource}\n\n${formatDiffCoverage(limitedDiff.coverage)}\n\nDiff:\n${limitedDiff.diff}`
     },
     {
       profile: options.profile
@@ -98,13 +101,16 @@ export async function runAiCommitWorkflow(options) {
 
   const commitMessage = buildCommitMessage(parsed)
 
-  logger.success(`AI 建议提交信息:\n${commitMessage}`)
+  if (!options.silentResultLog) {
+    logger.success(`AI 建议提交信息:\n${commitMessage}`)
+  }
 
   if (!options.apply) {
     return {
       applied: false,
       commitMessage,
-      raw: text
+      raw: text,
+      diffCoverage: summarizeDiffCoverage(limitedDiff.coverage)
     }
   }
 
@@ -115,6 +121,7 @@ export async function runAiCommitWorkflow(options) {
         applied: false,
         commitMessage,
         raw: text,
+        diffCoverage: summarizeDiffCoverage(limitedDiff.coverage),
         canceled: true
       }
     }
@@ -130,7 +137,7 @@ export async function runAiCommitWorkflow(options) {
   })
 
   const commitId = await git.revParseShort('HEAD')
-  if (commitId) {
+  if (commitId && !options.silentResultLog) {
     logger.success(`AI commit 已创建: ${commitId}`)
   }
 
@@ -138,6 +145,7 @@ export async function runAiCommitWorkflow(options) {
     applied: true,
     commitId,
     commitMessage,
-    raw: text
+    raw: text,
+    diffCoverage: summarizeDiffCoverage(limitedDiff.coverage)
   }
 }

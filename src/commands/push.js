@@ -9,6 +9,7 @@ const PUSH_PARSE_OPTIONS = {
   yes: { type: 'boolean', short: 'y' },
   'local-merge': { type: 'boolean' },
   'remote-merge': { type: 'boolean', short: 'r' },
+  'dry-run': { type: 'boolean' },
   'ai-commit': { type: 'boolean' },
   'ai-profile': { type: 'string' },
   help: { type: 'boolean', short: 'h' },
@@ -45,6 +46,7 @@ Options:
   -y, --yes                   自动确认（跳过确认提示）
   --local-merge               使用本地 merge 模式（默认，会切换分支并生成 merge commit）
   -r, --remote-merge          使用远程 PR/MR 合并模式（默认启用项目远程合并）
+  --dry-run                   只展示计划，不执行 commit/fetch/pull/push/merge/MR
   --ai-commit                 push 前自动执行 AI commit（会参考本地 hook/commitlint 规范）
   --ai-profile <name>         指定 AI profile（用于 --ai-commit）
   --pull-main                 提交前将主分支同步到当前分支
@@ -97,6 +99,17 @@ function printPushSummary(summary = []) {
   })
 }
 
+// 输出 dry-run 计划摘要，输入 workflow 返回的计划，输出对用户可读的阶段列表。
+function printDryRunPlan(plan) {
+  logger.info(`[dry-run] 当前分支: ${plan.currentBranch}`)
+  logger.info(`[dry-run] 目标分支: ${plan.branchTargets.join(', ')}`)
+  logger.info(`[dry-run] 合并模式: ${plan.remoteMerge ? 'remote-merge' : 'local-merge'}`)
+  plan.steps.forEach((step, index) => {
+    const reason = step.reason ? ` - ${step.reason}` : ''
+    logger.info(`[dry-run] ${index + 1}. ${step.action}: ${step.branch}${reason}`)
+  })
+}
+
 export function resolvePushWorkflowOptions(parsedValues, parsedPositionals, scopedOptions = {}) {
   return {
     targetBranches: parsedPositionals,
@@ -104,6 +117,7 @@ export function resolvePushWorkflowOptions(parsedValues, parsedPositionals, scop
     // 显式传入开关才生效，避免配置项隐式开启 push 行为。
     yes: resolveBooleanOption(parsedValues.yes, false),
     remoteMerge: resolveBooleanOption(parsedValues['remote-merge'], false),
+    dryRun: resolveBooleanOption(parsedValues['dry-run'], false),
     aiCommit: resolveBooleanOption(parsedValues['ai-commit'], false),
     aiCommitLang: resolveStringOption(undefined, scopedOptions.aiCommitLang, 'zh'),
     aiProfile: resolveStringOption(parsedValues['ai-profile'], scopedOptions.aiProfile, ''),
@@ -146,6 +160,11 @@ export async function runPushCommand(rawArgs) {
   }
 
   if (result.canceled) {
+    return
+  }
+
+  if (result.dryRun) {
+    printDryRunPlan(result.plan)
     return
   }
 

@@ -1,8 +1,18 @@
 import { IcodeError } from '../core/errors.js'
 import { resolveGitContext } from '../core/git/context.js'
+import {
+  assertCleanWorktree,
+  assertNoConflictedFiles,
+  assertNoPendingOperation,
+  readGitSafetyState
+} from '../core/git/preconditions.js'
 import { GitService } from '../core/git/service.js'
 import { logger } from '../core/tools/logger.js'
 
+/**
+ * 执行 checkout 工作流。
+ * 输入为目标分支、基线分支和执行选项，输出分支切换结果；实际切换前要求工作区干净且没有未完成 Git 操作。
+ */
 export async function runCheckoutWorkflow(input) {
   if (!input.branchName) {
     throw new IcodeError('缺少分支名: icode checkout <branch> [base]', {
@@ -19,6 +29,10 @@ export async function runCheckoutWorkflow(input) {
   const git = new GitService(context)
   const branchName = input.branchName.trim()
   const baseBranchName = input.baseBranchName?.trim() || context.defaultBranch
+  const safetyState = await readGitSafetyState(git)
+  assertNoPendingOperation(safetyState.operation, 'checkout', 'CHECKOUT_GIT_OPERATION_IN_PROGRESS')
+  assertNoConflictedFiles(safetyState.changes, 'checkout', 'CHECKOUT_CONFLICTED_FILES')
+  assertCleanWorktree(safetyState.changes, 'checkout', 'CHECKOUT_DIRTY_WORKTREE')
 
   logger.info(`仓库根目录: ${context.topLevelPath}`)
   if (context.inheritedFromParent) {
@@ -55,7 +69,6 @@ export async function runCheckoutWorkflow(input) {
   if (input.pullMain && context.defaultBranch !== branchName) {
     logger.info(`同步主分支到当前分支: ${context.defaultBranch}`)
     await git.pull(context.defaultBranch, {
-      allowUnrelatedHistories: true,
       noRebase: true
     })
   }
@@ -63,7 +76,6 @@ export async function runCheckoutWorkflow(input) {
   if (remoteExists) {
     logger.info(`拉取远程分支: ${branchName}`)
     await git.pull(branchName, {
-      allowUnrelatedHistories: true,
       noRebase: true
     })
   }

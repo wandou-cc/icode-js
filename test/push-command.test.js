@@ -26,6 +26,7 @@ test('push options only enable boolean flags when passed on CLI', () => {
     message: 'fix: test',
     yes: false,
     remoteMerge: false,
+    dryRun: false,
     aiCommit: false,
     aiCommitLang: 'en',
     aiProfile: 'ollama',
@@ -63,6 +64,7 @@ test('push options respect explicit CLI flags', () => {
     message: 'fix: test',
     yes: true,
     remoteMerge: false,
+    dryRun: false,
     aiCommit: true,
     aiCommitLang: 'en',
     aiProfile: 'custom-profile',
@@ -84,6 +86,18 @@ test('push options support explicit remote merge flag', () => {
   )
 
   assert.equal(options.remoteMerge, true)
+})
+
+test('push options support explicit dry-run flag', () => {
+  const options = resolvePushWorkflowOptions(
+    {
+      'dry-run': true
+    },
+    ['release'],
+    {}
+  )
+
+  assert.equal(options.dryRun, true)
 })
 
 test('push command parses -r as remote merge flag', () => {

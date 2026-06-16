@@ -35,6 +35,14 @@ const UNDO_REF_SUGGESTIONS = {
   hard: ['HEAD~1', 'HEAD~2', 'HEAD~3', 'HEAD~5', 'HEAD']
 }
 
+// 静默模式下输出 warn 日志，输入执行选项和日志文本，输出为空。
+function logWarn(options, message) {
+  if (!options.silentLog) {
+    logger.warn(message)
+  }
+}
+
+// 解析交互菜单选择，输入菜单 value，输出 mode/ref 或 canceled。
 function parseSelection(selection) {
   if (!selection || selection === 'cancel') {
     return {
@@ -49,10 +57,12 @@ function parseSelection(selection) {
   }
 }
 
+// 解析指定模式的默认 ref，输入 mode，输出默认回滚目标。
 function resolveDefaultRef(mode) {
   return mode === 'revert' ? 'HEAD' : 'HEAD~1'
 }
 
+// 构建 undo 的 ref 选择项，输入 workflow options 和 mode，输出交互候选项。
 async function buildUndoRefChoices(options, mode) {
   const fallbackRef = resolveDefaultRef(mode)
   const suggestedRefs = UNDO_REF_SUGGESTIONS[mode] || UNDO_REF_SUGGESTIONS.soft
@@ -98,6 +108,7 @@ async function buildUndoRefChoices(options, mode) {
   }
 }
 
+// 校验并归一化 recover 参数，输入用户参数，输出 continue/abort/keep 或空字符串。
 function normalizeRecover(value) {
   const normalized = (value || '').trim().toLowerCase()
   if (!normalized) {
@@ -115,6 +126,7 @@ function normalizeRecover(value) {
   return normalized
 }
 
+// 处理未完成的 merge/revert/cherry-pick 操作，输入 workflow options，输出恢复结果或 null。
 async function resolvePendingOperation(options) {
   const context = await resolveGitContext({
     cwd: options.cwd,
@@ -127,7 +139,7 @@ async function resolvePendingOperation(options) {
     return null
   }
 
-  logger.warn(`检测到未完成的 ${pending} 操作。`)
+  logWarn(options, `检测到未完成的 ${pending} 操作。`)
 
   let action = normalizeRecover(options.recover)
   if (!action) {
@@ -153,7 +165,7 @@ async function resolvePendingOperation(options) {
   }
 
   if (action === 'keep') {
-    logger.warn('保持现场，未执行继续/中止。')
+    logWarn(options, '保持现场，未执行继续/中止。')
     return {
       canceled: true,
       pendingOperation: pending
@@ -164,6 +176,8 @@ async function resolvePendingOperation(options) {
     try {
       if (pending === 'revert') {
         await git.revertContinue()
+      } else if (pending === 'merge') {
+        await git.mergeContinue()
       } else {
         await git.cherryPickContinue()
       }
@@ -186,6 +200,8 @@ async function resolvePendingOperation(options) {
 
   if (pending === 'revert') {
     await git.revertAbort()
+  } else if (pending === 'merge') {
+    await git.mergeAbort()
   } else {
     await git.abortCherryPick()
   }
@@ -196,6 +212,7 @@ async function resolvePendingOperation(options) {
   }
 }
 
+// 处理 revert 冲突后的恢复策略，输入 options/mode/ref，输出恢复结果。
 async function handleRevertConflict(options, mode, ref) {
   let action = normalizeRecover(options.recover)
 
@@ -265,7 +282,7 @@ export async function runUndoWorkflow(options) {
     const selected = await chooseOne('请选择回滚策略：', UNDO_OPTIONS, 0)
     const parsed = parseSelection(selected)
     if (parsed.canceled) {
-      logger.warn('已取消 undo。')
+      logWarn(options, '已取消 undo。')
       return {
         canceled: true
       }
@@ -285,7 +302,7 @@ export async function runUndoWorkflow(options) {
       const refChoice = await buildUndoRefChoices(options, mode)
       const selectedRef = await chooseOne('请选择要回滚的 ref：', refChoice.choices, refChoice.defaultIndex)
       if (selectedRef === 'cancel') {
-        logger.warn('已取消 undo。')
+        logWarn(options, '已取消 undo。')
         return {
           canceled: true,
           mode,
@@ -307,7 +324,7 @@ export async function runUndoWorkflow(options) {
       mode !== 'hard' ? 0 : 1
     )) === 'yes'
     if (!accepted) {
-      logger.warn('已取消 undo。')
+      logWarn(options, '已取消 undo。')
       return {
         canceled: true,
         mode,
@@ -322,14 +339,15 @@ export async function runUndoWorkflow(options) {
       mode,
       yes: options.yes,
       repoMode: options.repoMode,
-      cwd: options.cwd
+      cwd: options.cwd,
+      silentLog: options.silentLog
     })
   } catch (error) {
     if (error?.code !== 'REVERT_CONFLICT') {
       throw error
     }
 
-    logger.warn(error.message)
+    logWarn(options, error.message)
     return handleRevertConflict(options, mode, ref)
   }
 }

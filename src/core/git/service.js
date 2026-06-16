@@ -9,6 +9,77 @@ function cleanOutput(text) {
   return (text || '').trim()
 }
 
+/**
+ * 解析 porcelain v1 单行状态。
+ * 输入为 `git status --porcelain` 的一行文本，输出为索引区状态、工作区状态和文件路径。
+ * 关键假设：本项目只需要稳定分类改动，不在这里还原 rename 的源路径细节。
+ */
+function parsePorcelainLine(line) {
+  const indexStatus = line.slice(0, 1)
+  const worktreeStatus = line.slice(1, 2)
+  const rawPath = line.slice(3).trim()
+  const separatorIndex = rawPath.indexOf(' -> ')
+  const filePath = separatorIndex === -1 ? rawPath : rawPath.slice(separatorIndex + 4)
+
+  return {
+    raw: line,
+    indexStatus,
+    worktreeStatus,
+    filePath
+  }
+}
+
+/**
+ * 汇总 porcelain 状态行。
+ * 输入为状态行数组，输出为 staged/unstaged/untracked/conflicted 计数和文件明细。
+ * 关键假设：`??` 表示未跟踪文件，`U` 或双边冲突组合表示未解决冲突。
+ */
+function summarizeStatusEntries(entries) {
+  const files = []
+  const summary = {
+    staged: 0,
+    unstaged: 0,
+    untracked: 0,
+    conflicted: 0,
+    files
+  }
+
+  for (const entry of entries) {
+    const isUntracked = entry.indexStatus === '?' && entry.worktreeStatus === '?'
+    const isConflicted = entry.indexStatus === 'U' ||
+      entry.worktreeStatus === 'U' ||
+      (entry.indexStatus === 'A' && entry.worktreeStatus === 'A') ||
+      (entry.indexStatus === 'D' && entry.worktreeStatus === 'D')
+    const hasStaged = !isUntracked && entry.indexStatus !== ' ' && entry.indexStatus !== '?' && !isConflicted
+    const hasUnstaged = !isUntracked && entry.worktreeStatus !== ' ' && entry.worktreeStatus !== '?' && !isConflicted
+
+    if (isUntracked) {
+      summary.untracked += 1
+    }
+    if (isConflicted) {
+      summary.conflicted += 1
+    }
+    if (hasStaged) {
+      summary.staged += 1
+    }
+    if (hasUnstaged) {
+      summary.unstaged += 1
+    }
+
+    files.push({
+      path: entry.filePath,
+      indexStatus: entry.indexStatus,
+      worktreeStatus: entry.worktreeStatus,
+      staged: hasStaged,
+      unstaged: hasUnstaged,
+      untracked: isUntracked,
+      conflicted: isConflicted
+    })
+  }
+
+  return summary
+}
+
 function parseGitLogRecords(output) {
   return output
     .split('\x1e')
@@ -74,6 +145,10 @@ export class GitService {
       this.operationFileExists('rebase-merge')
     ) {
       return 'rebase'
+    }
+
+    if (this.operationFileExists('MERGE_HEAD')) {
+      return 'merge'
     }
 
     return null
@@ -150,7 +225,9 @@ export class GitService {
   async pull(branchName, options = {}) {
     const args = ['pull', 'origin', branchName]
 
-    if (options.noRebase !== false) {
+    if (options.rebase) {
+      args.push('--rebase')
+    } else if (options.noRebase !== false) {
       args.push('--no-rebase')
     }
 
@@ -176,6 +253,16 @@ export class GitService {
     await this.exec(args)
   }
 
+  // 继续已解决冲突的 merge 操作，供 undo recover 统一恢复合并现场。
+  async mergeContinue() {
+    await this.exec(['merge', '--continue'])
+  }
+
+  // 中止未完成的 merge 操作，保留给显式 recover abort 使用，不自动清理用户现场。
+  async mergeAbort() {
+    await this.exec(['merge', '--abort'], { allowFailure: true })
+  }
+
   async rebase(fromRef) {
     await this.exec(['rebase', fromRef])
   }
@@ -190,10 +277,73 @@ export class GitService {
     return result.stdout
   }
 
+  /**
+   * 读取并解析工作区状态。
+   * 输入为空，输出为结构化改动摘要，供 ready/save 等场景命令复用。
+   */
+  async getStatusSummary() {
+    const output = await this.statusPorcelain()
+    const entries = output
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+      .map(parsePorcelainLine)
+
+    return {
+      clean: entries.length === 0,
+      total: entries.length,
+      ...summarizeStatusEntries(entries)
+    }
+  }
+
   async hasChanges() {
     // 只要 porcelain 有输出，就说明暂存区、工作区或未跟踪文件存在改动。
     const output = await this.statusPorcelain()
     return cleanOutput(output).length > 0
+  }
+
+  /**
+   * 读取当前分支的 upstream ref。
+   * 输入为空，输出为 upstream 短 ref；没有 upstream 时返回空字符串。
+   */
+  async getUpstreamRef() {
+    const result = await this.exec(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], {
+      allowFailure: true
+    })
+
+    if (result.exitCode !== 0) {
+      return ''
+    }
+
+    return cleanOutput(result.stdout)
+  }
+
+  /**
+   * 读取当前 HEAD 与 upstream 的领先/落后数量。
+   * 输入为空，输出 upstream、ahead、behind；没有 upstream 时 explicitly 标记 configured=false。
+   */
+  async getUpstreamStatus() {
+    const upstream = await this.getUpstreamRef()
+    if (!upstream) {
+      return {
+        configured: false,
+        upstream: '',
+        ahead: 0,
+        behind: 0
+      }
+    }
+
+    const result = await this.exec(['rev-list', '--left-right', '--count', `${upstream}...HEAD`])
+    const [behindRaw = '0', aheadRaw = '0'] = cleanOutput(result.stdout).split(/\s+/)
+    const behind = Number.parseInt(behindRaw, 10)
+    const ahead = Number.parseInt(aheadRaw, 10)
+
+    return {
+      configured: true,
+      upstream,
+      ahead: Number.isInteger(ahead) ? ahead : 0,
+      behind: Number.isInteger(behind) ? behind : 0
+    }
   }
 
   // 列出未被忽略的未跟踪文件，供 AI 工作流补全新文件 diff。

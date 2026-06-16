@@ -9,6 +9,21 @@ function isRevertConflict(error) {
   return /revert is already in progress|could not revert|after resolving the conflicts|CONFLICT \(/i.test(output)
 }
 
+// 静默模式下输出 info 日志，输入执行选项和日志文本，输出为空。
+function logInfo(options, message) {
+  if (!options.silentLog) {
+    logger.info(message)
+  }
+}
+
+// 静默模式下输出 warn 日志，输入执行选项和日志文本，输出为空。
+function logWarn(options, message) {
+  if (!options.silentLog) {
+    logger.warn(message)
+  }
+}
+
+// 执行底层回滚操作，输入 mode/ref/仓库选项，输出执行结果。
 export async function runRollbackWorkflow(options) {
   const mode = options.mode || 'revert'
   const ref = options.ref || (mode === 'revert' ? 'HEAD' : 'HEAD~1')
@@ -20,13 +35,13 @@ export async function runRollbackWorkflow(options) {
 
   const git = new GitService(context)
 
-  logger.info(`仓库根目录: ${context.topLevelPath}`)
+  logInfo(options, `仓库根目录: ${context.topLevelPath}`)
   if (context.inheritedFromParent) {
-    logger.warn('当前目录继承了父级 Git 仓库，命令将基于父仓库根目录执行。')
+    logWarn(options, '当前目录继承了父级 Git 仓库，命令将基于父仓库根目录执行。')
   }
 
   if (mode === 'revert') {
-    logger.info(`执行回滚(revert): ${ref}`)
+    logInfo(options, `执行回滚(revert): ${ref}`)
     try {
       await git.revert(ref)
     } catch (error) {
@@ -63,7 +78,7 @@ export async function runRollbackWorkflow(options) {
       false
     )
     if (!accepted) {
-      logger.warn('已取消 hard 回滚。')
+      logWarn(options, '已取消 hard 回滚。')
       return {
         canceled: true,
         mode,
@@ -73,7 +88,7 @@ export async function runRollbackWorkflow(options) {
     }
   }
 
-  logger.info(`执行回滚(reset --${mode}): ${ref}`)
+  logInfo(options, `执行回滚(reset --${mode}): ${ref}`)
   await git.reset(mode, ref)
 
   return {

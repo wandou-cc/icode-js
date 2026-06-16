@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import { normalizeLegacyArgs } from '../core/cli/args.js'
 import { IcodeError } from '../core/errors.js'
 import { logger } from '../core/tools/logger.js'
 import { runUndoWorkflow } from '../workflows/undo-workflow.js'
@@ -17,6 +18,7 @@ Options:
   --ref <ref>            回滚目标，默认按 mode 自动给出
   --hash <hash>          按 commit hash 指定回滚目标（等同 --ref）
   --recover <action>     冲突恢复策略: continue | abort | keep
+  --json                 输出机器可读 JSON，适合 AI agent 或脚本消费
   -y, --yes              自动确认（跳过确认提示）
   --repo-mode <mode>     仓库模式: auto(自动继承父仓库) | strict(禁止继承)
   -h, --help             查看帮助
@@ -30,6 +32,7 @@ Examples:
   icode undo --mode revert --ref HEAD~2
   icode undo --mode hard --hash a1b2c3d -y
   icode undo --recover abort
+  icode undo --mode revert --ref HEAD --json
   icode undo --mode hard --ref HEAD~1 -y
 `)
 }
@@ -73,6 +76,8 @@ export function resolveUndoWorkflowOptions(values, positionals, defaults = {}) {
     mode: values.mode,
     ref: firstRef,
     recover: values.recover,
+    json: values.json === true,
+    silentLog: values.json === true,
     yes: values.yes === true,
     repoMode: values['repo-mode'] || defaults.repoMode || 'auto'
   }
@@ -83,14 +88,16 @@ export function resolveUndoWorkflowOptions(values, positionals, defaults = {}) {
  * 输入为子命令参数数组，输出为空；内部会按参数调用 undo workflow 并打印结果。
  */
 export async function runUndoCommand(rawArgs) {
+  const args = normalizeLegacyArgs(rawArgs)
   const parsed = parseArgs({
-    args: rawArgs,
+    args,
     allowPositionals: true,
     options: {
       mode: { type: 'string' },
       ref: { type: 'string' },
       hash: { type: 'string' },
       recover: { type: 'string' },
+      json: { type: 'boolean', default: false },
       yes: { type: 'boolean', short: 'y', default: false },
       'repo-mode': { type: 'string', default: 'auto' },
       help: { type: 'boolean', short: 'h', default: false }
@@ -103,6 +110,11 @@ export async function runUndoCommand(rawArgs) {
   }
 
   const result = await runUndoWorkflow(resolveUndoWorkflowOptions(parsed.values, parsed.positionals))
+
+  if (parsed.values.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+    return result
+  }
 
   if (result.canceled) {
     return

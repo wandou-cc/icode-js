@@ -3,7 +3,6 @@ import path from 'node:path'
 import { runCommand } from '../commands/shell.js'
 import { readConfig } from '../config/store.js'
 import { IcodeError } from '../errors.js'
-import { confirm } from '../tools/interactive.js'
 
 function cleanOutput(text) {
   return (text || '').trim()
@@ -14,22 +13,20 @@ async function commandOutput(cwd, args, allowFailure = false) {
   return result
 }
 
-async function ensureGitRepository(cwd, options = {}) {
-  const confirmInit = options.confirm || confirm
+/**
+ * 确认当前目录属于 Git 仓库。
+ * 输入为工作目录，输出为空；不在仓库中时直接抛错，不隐式初始化仓库。
+ */
+async function ensureGitRepository(cwd) {
   const inside = await commandOutput(cwd, ['rev-parse', '--is-inside-work-tree'], true)
   if (inside.exitCode === 0 && cleanOutput(inside.stdout) === 'true') {
     return
   }
 
-  const shouldInit = await confirmInit('当前目录还没有初始化 Git 仓库，是否现在执行 git init？')
-  if (!shouldInit) {
-    throw new IcodeError('当前目录不在 Git 仓库中。', {
-      code: 'NOT_IN_GIT_REPO',
-      exitCode: 2
-    })
-  }
-
-  await commandOutput(cwd, ['init'])
+  throw new IcodeError('当前目录不在 Git 仓库中。请先进入已有仓库，或手动执行 git init。', {
+    code: 'NOT_IN_GIT_REPO',
+    exitCode: 2
+  })
 }
 
 async function detectDefaultBranch(topLevelPath, fallbackCandidates = ['main', 'master']) {
@@ -57,15 +54,17 @@ async function detectDefaultBranch(topLevelPath, fallbackCandidates = ['main', '
   return 'main'
 }
 
+/**
+ * 解析当前 Git 仓库上下文。
+ * 输入为 cwd/repoMode 等选项，输出仓库根路径、git 目录、当前分支和默认分支等稳定上下文。
+ */
 export async function resolveGitContext(options = {}) {
   const cwd = path.resolve(options.cwd || process.cwd())
   const config = readConfig()
   const configRepoMode = config.defaults?.repoMode || 'auto'
   const repoMode = options.repoMode || configRepoMode
 
-  await ensureGitRepository(cwd, {
-    confirm: options.confirm
-  })
+  await ensureGitRepository(cwd)
 
   const topLevelPath = cleanOutput((await commandOutput(cwd, ['rev-parse', '--show-toplevel'])).stdout)
   const gitDirRaw = cleanOutput((await commandOutput(cwd, ['rev-parse', '--git-dir'])).stdout)

@@ -1,5 +1,12 @@
 import { IcodeError } from '../core/errors.js'
 import { resolveGitContext } from '../core/git/context.js'
+import {
+  assertCleanWorktree,
+  assertNoConflictedFiles,
+  assertNoPendingOperation,
+  assertOnBranch,
+  readGitSafetyState
+} from '../core/git/preconditions.js'
 import { GitService } from '../core/git/service.js'
 import { confirm } from '../core/tools/interactive.js'
 import { logger } from '../core/tools/logger.js'
@@ -33,6 +40,10 @@ async function ensureBranchReady(git, branchName) {
   }
 }
 
+/**
+ * 执行 sync 工作流。
+ * 输入为目标分支与同步选项，输出每个分支的同步摘要；实际切换分支前要求当前仓库处于干净状态。
+ */
 export async function runSyncWorkflow(options) {
   const context = await resolveGitContext({
     cwd: options.cwd,
@@ -40,7 +51,12 @@ export async function runSyncWorkflow(options) {
   })
 
   const git = new GitService(context)
-  const currentBranch = (await git.getCurrentBranch()) || context.currentBranch
+  const safetyState = await readGitSafetyState(git)
+  const currentBranch = safetyState.currentBranch || context.currentBranch
+  assertOnBranch(currentBranch, 'sync', 'SYNC_DETACHED_HEAD')
+  assertNoPendingOperation(safetyState.operation, 'sync', 'SYNC_GIT_OPERATION_IN_PROGRESS')
+  assertNoConflictedFiles(safetyState.changes, 'sync', 'SYNC_CONFLICTED_FILES')
+  assertCleanWorktree(safetyState.changes, 'sync', 'SYNC_DIRTY_WORKTREE')
 
   let targetInput = options.branches?.length
     ? [...options.branches]
@@ -99,7 +115,7 @@ export async function runSyncWorkflow(options) {
       if (setup.remoteExists) {
         await git.pull(branchName, {
           noRebase: !options.rebase,
-          allowUnrelatedHistories: true
+          rebase: options.rebase
         })
       }
 

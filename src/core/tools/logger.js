@@ -25,6 +25,11 @@ function print(stream, level, message) {
 }
 
 export const logger = {
+  // 按指定颜色渲染短文本，输入颜色名和文本，输出可直接拼进日志的 ANSI 字符串。
+  color(color, message) {
+    return colorize(color, String(message ?? ''))
+  },
+
   setVerbose(enabled) {
     verboseEnabled = Boolean(enabled)
   },

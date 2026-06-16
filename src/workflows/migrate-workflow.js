@@ -6,14 +6,17 @@ import { logger } from '../core/tools/logger.js'
 
 const INTERACTIVE_COMMIT_LIMIT = 30
 
+// 归一化分支名，输入为用户参数，输出去除首尾空白后的分支名。
 function normalizeBranchName(value) {
   return (value || '').trim()
 }
 
+// 归一化提交范围，输入为用户参数，输出去除首尾空白后的 range 表达式。
 function normalizeRangeSpec(value) {
   return (value || '').trim()
 }
 
+// 构建最近 N 条提交的交互选项，输入最大提交数，输出可供 chooseOne 使用的选项。
 function buildRecentCountChoices(maxCount) {
   const candidates = [1, 2, 3, 5, 8, 10]
     .filter((count) => count <= maxCount)
@@ -32,10 +35,12 @@ function buildRecentCountChoices(maxCount) {
   return candidates
 }
 
+// 去重并排序分支候选，输入本地/远程分支列表，输出稳定顺序的分支名数组。
 function uniqueBranches(branches) {
   return Array.from(new Set((branches || []).map((item) => item.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))
 }
 
+// 读取迁移交互模式的分支候选，输入 GitService，输出本地与 origin 远程分支名。
 async function listBranchCandidates(git) {
   const [localBranches, remoteBranches] = await Promise.all([
     git.listLocalBranches(),
@@ -44,6 +49,7 @@ async function listBranchCandidates(git) {
   return uniqueBranches([...localBranches, ...remoteBranches])
 }
 
+// 选择 source/target 分支，输入候选和默认值，输出用户选择的分支名。
 async function pickBranch({ label, candidates, defaultValue, excludedBranch = '' }) {
   const excluded = normalizeBranchName(excludedBranch)
   const normalizedDefault = normalizeBranchName(defaultValue)
@@ -82,6 +88,7 @@ async function pickBranch({ label, candidates, defaultValue, excludedBranch = ''
   return normalizeBranchName(selected)
 }
 
+// 手动选择要 cherry-pick 的提交，输入提交 hash 列表，输出被选择的 hash 列表。
 async function pickManualCommits(git, commits) {
   const displayCommits = commits.length > INTERACTIVE_COMMIT_LIMIT
     ? commits.slice(-INTERACTIVE_COMMIT_LIMIT)
@@ -109,12 +116,13 @@ async function pickManualCommits(git, commits) {
   return Array.isArray(selected) ? selected : []
 }
 
+// 解析交互模式迁移计划，输入 GitService 和初始参数，输出 source/target/range/selectedCommits。
 async function resolveInteractivePlan(git, options) {
   const candidates = await listBranchCandidates(git)
   const sourceBranch = await pickBranch({
     label: 'source 分支',
     candidates,
-    defaultValue: options.sourceBranch
+    defaultValue: options.sourceBranch || options.currentBranch
   })
 
   const targetBranch = await pickBranch({
@@ -260,6 +268,189 @@ async function resolveInteractivePlan(git, options) {
   }
 }
 
+// 静默模式下输出 info 日志，输入执行选项和日志文本，输出为空。
+function logInfo(options, message) {
+  if (!options.silentLog) {
+    logger.info(message)
+  }
+}
+
+// 静默模式下输出 warn 日志，输入执行选项和日志文本，输出为空。
+function logWarn(options, message) {
+  if (!options.silentLog) {
+    logger.warn(message)
+  }
+}
+
+// 检查 migrate 执行前置条件，输入 GitService，输出当前分支和改动摘要。
+async function assertMigratePreconditions(git) {
+  const [currentBranch, operation, changes] = await Promise.all([
+    git.getCurrentBranch(),
+    git.getInProgressOperation(),
+    git.getStatusSummary()
+  ])
+
+  if (!currentBranch) {
+    throw new IcodeError('当前不在普通分支上，migrate 已停止。', {
+      code: 'MIGRATE_DETACHED_HEAD',
+      exitCode: 2
+    })
+  }
+
+  if (operation) {
+    throw new IcodeError(`检测到未完成的 Git 操作: ${operation}。请先完成或中止该操作。`, {
+      code: 'MIGRATE_GIT_OPERATION_IN_PROGRESS',
+      exitCode: 2,
+      meta: {
+        operation
+      }
+    })
+  }
+
+  if (!changes.clean) {
+    throw new IcodeError('工作区存在未提交改动，migrate 已停止。请先执行 save 或手动清理。', {
+      code: 'MIGRATE_DIRTY_WORKTREE',
+      exitCode: 2,
+      meta: {
+        changes
+      }
+    })
+  }
+
+  return {
+    currentBranch,
+    changes
+  }
+}
+
+// 将本地/远程分支存在性解析为可用于 rev-list 的 ref，输入分支名和存在性，输出明确 ref。
+function resolveBranchRef(branchName, existsLocal, existsRemote, label) {
+  if (existsLocal) {
+    return branchName
+  }
+
+  if (existsRemote) {
+    return `origin/${branchName}`
+  }
+
+  throw new IcodeError(`${label} 分支不存在: ${branchName}`, {
+    code: label === 'source' ? 'MIGRATE_SOURCE_MISSING' : 'MIGRATE_TARGET_MISSING',
+    exitCode: 2
+  })
+}
+
+// 构建提交展示计划，输入提交 hash 列表，输出 hash 与提交摘要列表。
+async function buildCommitPlan(git, commits) {
+  const plan = []
+
+  for (const commitHash of commits) {
+    plan.push({
+      hash: commitHash,
+      summary: await git.showCommitSummary(commitHash)
+    })
+  }
+
+  return plan
+}
+
+// 构建 migrate 执行步骤，输入计划上下文，输出人类和 agent 都能读取的步骤数组。
+function buildMigrateSteps(plan) {
+  const steps = [
+    {
+      action: 'checkout-target',
+      detail: plan.targetExistsLocal
+        ? `切换到本地目标分支 ${plan.targetBranch}`
+        : `从 origin/${plan.targetBranch} 创建 tracking 分支`
+    }
+  ]
+
+  if (plan.targetExistsRemote) {
+    steps.push({
+      action: 'pull-target',
+      detail: `同步 origin/${plan.targetBranch} 到目标分支`
+    })
+  }
+
+  steps.push({
+    action: 'cherry-pick',
+    detail: `迁移 ${plan.commits.length} 个提交`
+  })
+
+  if (plan.push) {
+    steps.push({
+      action: 'push-target',
+      detail: `推送目标分支 ${plan.targetBranch}`
+    })
+  }
+
+  if (plan.originalBranch && plan.originalBranch !== plan.targetBranch) {
+    steps.push({
+      action: 'restore-branch',
+      detail: `切回原分支 ${plan.originalBranch}`
+    })
+  }
+
+  return steps
+}
+
+// 输出迁移计划预览，输入计划对象，输出用户确认前需要看到的关键信息。
+function logMigratePlan(options, plan) {
+  const previewLimit = 10
+  const previewCommits = plan.commits.slice(0, previewLimit)
+
+  logInfo(options, '迁移计划:')
+  logInfo(options, `  source: ${plan.sourceBranch} (${plan.sourceRef})`)
+  logInfo(options, `  target: ${plan.targetBranch} (${plan.targetRef})`)
+  logInfo(options, `  range: ${plan.rangeSpec}`)
+  logInfo(options, `  commits: ${plan.migratedCommits}`)
+
+  if (previewCommits.length) {
+    logInfo(options, '提交预览:')
+    previewCommits.forEach((commit, index) => {
+      logInfo(options, `  ${index + 1}. ${commit.summary || commit.hash}`)
+    })
+  }
+
+  if (plan.commits.length > previewLimit) {
+    logInfo(options, `  ... 还有 ${plan.commits.length - previewLimit} 个提交未显示，可用 --dry-run --json 查看完整计划。`)
+  }
+
+  logInfo(options, '执行步骤:')
+  plan.steps.forEach((step, index) => {
+    logInfo(options, `  ${index + 1}. ${step.action}: ${step.detail}`)
+  })
+}
+
+// 构建迁移计划结果，输入已解析的分支、范围和提交，输出稳定 JSON 结构。
+async function buildMigratePlan(git, values) {
+  const commits = values.selectedCommits.length
+    ? values.selectedCommits
+    : await git.revList(values.effectiveRangeSpec)
+  const commitPlan = await buildCommitPlan(git, commits)
+  const plan = {
+    sourceBranch: values.sourceBranch,
+    targetBranch: values.targetBranch,
+    sourceRef: values.sourceRef,
+    targetRef: values.targetRef,
+    originalBranch: values.originalBranch,
+    rangeSpec: values.effectiveRangeSpec,
+    rangeMode: values.rangeMode,
+    selectedCommits: values.selectedCommits,
+    commits: commitPlan,
+    migratedCommits: commits.length,
+    targetExistsLocal: values.targetExistsLocal,
+    targetExistsRemote: values.targetExistsRemote,
+    push: values.push,
+    repoRoot: values.repoRoot
+  }
+
+  return {
+    ...plan,
+    steps: buildMigrateSteps(plan)
+  }
+}
+
+// 执行提交迁移工作流，输入 source/target/range/push/dryRun 等选项，输出迁移结果或计划。
 export async function runMigrateWorkflow(options) {
   let sourceBranch = normalizeBranchName(options.sourceBranch)
   let targetBranch = normalizeBranchName(options.targetBranch)
@@ -276,11 +467,12 @@ export async function runMigrateWorkflow(options) {
   })
 
   const git = new GitService(context)
-  const originalBranch = await git.getCurrentBranch()
+  const precheck = await assertMigratePreconditions(git)
+  const originalBranch = precheck.currentBranch
 
-  logger.info(`仓库根目录: ${context.topLevelPath}`)
+  logInfo(options, `仓库根目录: ${context.topLevelPath}`)
   if (context.inheritedFromParent) {
-    logger.warn('当前目录继承了父级 Git 仓库，命令将基于父仓库根目录执行。')
+    logWarn(options, '当前目录继承了父级 Git 仓库，命令将基于父仓库根目录执行。')
   }
 
   await git.fetch()
@@ -296,6 +488,7 @@ export async function runMigrateWorkflow(options) {
     const interactivePlan = await resolveInteractivePlan(git, {
       sourceBranch,
       targetBranch,
+      currentBranch: originalBranch,
       range: rangeSpec
     })
 
@@ -334,20 +527,72 @@ export async function runMigrateWorkflow(options) {
 
   const sourceExistsLocal = await git.branchExistsLocal(sourceBranch)
   const sourceExistsRemote = await git.branchExistsRemote(sourceBranch)
-  if (!sourceExistsLocal && !sourceExistsRemote) {
-    throw new IcodeError(`source 分支不存在: ${sourceBranch}`, {
-      code: 'MIGRATE_SOURCE_MISSING',
-      exitCode: 2
-    })
-  }
+  const sourceRef = resolveBranchRef(sourceBranch, sourceExistsLocal, sourceExistsRemote, 'source')
 
   const targetExistsLocal = await git.branchExistsLocal(targetBranch)
   const targetExistsRemote = await git.branchExistsRemote(targetBranch)
-  if (!targetExistsLocal && !targetExistsRemote) {
-    throw new IcodeError(`target 分支不存在: ${targetBranch}`, {
-      code: 'MIGRATE_TARGET_MISSING',
-      exitCode: 2
-    })
+  const targetRef = resolveBranchRef(targetBranch, targetExistsLocal, targetExistsRemote, 'target')
+
+  // 默认迁移 source 相对 target 的增量提交；交互模式可选择最近 N 条或手动挑选提交。
+  const effectiveRangeSpec = rangeSpec || `${targetRef}..${sourceRef}`
+  const plan = await buildMigratePlan(git, {
+    sourceBranch,
+    targetBranch,
+    sourceRef,
+    targetRef,
+    originalBranch,
+    rangeMode,
+    selectedCommits,
+    effectiveRangeSpec,
+    targetExistsLocal,
+    targetExistsRemote,
+    push: Boolean(options.push),
+    repoRoot: context.topLevelPath
+  })
+
+  if (options.dryRun) {
+    return {
+      dryRun: true,
+      ...plan
+    }
+  }
+
+  const commits = plan.commits.map((commit) => commit.hash)
+
+  if (!commits.length) {
+    logWarn(options, '没有可迁移的提交。')
+    return {
+      dryRun: false,
+      sourceBranch,
+      targetBranch,
+      migratedCommits: 0,
+      rangeSpec: effectiveRangeSpec,
+      rangeMode,
+      repoRoot: context.topLevelPath
+    }
+  }
+
+  if (!options.yes) {
+    logMigratePlan(options, plan)
+    const accepted = (await chooseOne(
+      '确认执行以上迁移计划吗？',
+      [
+        { value: 'yes', label: '确认执行' },
+        { value: 'no', label: '取消迁移' }
+      ],
+      0
+    )) === 'yes'
+    if (!accepted) {
+      logger.warn('已取消迁移。')
+      return {
+        canceled: true,
+        sourceBranch,
+        targetBranch,
+        rangeSpec: effectiveRangeSpec,
+        rangeMode,
+        repoRoot: context.topLevelPath
+      }
+    }
   }
 
   try {
@@ -359,60 +604,21 @@ export async function runMigrateWorkflow(options) {
 
     if (targetExistsRemote) {
       await git.pull(targetBranch, {
-        allowUnrelatedHistories: true,
         noRebase: true
       })
     }
 
-    // 默认迁移 source 相对 target 的增量提交；交互模式可选择最近 N 条或手动挑选提交。
-    const effectiveRangeSpec = rangeSpec || `${targetBranch}..${sourceBranch}`
-    const commits = selectedCommits.length ? selectedCommits : await git.revList(effectiveRangeSpec)
-
     if (selectedCommits.length) {
-      logger.info(`迁移范围: 手动选择 ${selectedCommits.length} 个提交（mode=${rangeMode}）`)
+      logInfo(options, `迁移范围: 手动选择 ${selectedCommits.length} 个提交（mode=${rangeMode}）`)
     } else {
-      logger.info(`迁移范围: ${effectiveRangeSpec}`)
-    }
-
-    if (!commits.length) {
-      logger.warn('没有可迁移的提交。')
-      return {
-        sourceBranch,
-        targetBranch,
-        migratedCommits: 0,
-        rangeSpec: effectiveRangeSpec,
-        rangeMode,
-        repoRoot: context.topLevelPath
-      }
-    }
-
-    if (!options.yes) {
-      const accepted = (await chooseOne(
-        `确认将 ${commits.length} 个提交从 ${sourceBranch} 迁移到 ${targetBranch} 吗？`,
-        [
-          { value: 'yes', label: '确认迁移' },
-          { value: 'no', label: '取消' }
-        ],
-        0
-      )) === 'yes'
-      if (!accepted) {
-        logger.warn('已取消迁移。')
-        return {
-          canceled: true,
-          sourceBranch,
-          targetBranch,
-          rangeSpec: effectiveRangeSpec,
-          rangeMode,
-          repoRoot: context.topLevelPath
-        }
-      }
+      logInfo(options, `迁移范围: ${effectiveRangeSpec}`)
     }
 
     try {
       await git.cherryPick(commits)
     } catch (error) {
       throw new IcodeError(
-        '迁移失败: cherry-pick 发生冲突。请先解决冲突后执行 `git cherry-pick --continue`，或执行 `git cherry-pick --abort` 回滚。',
+        '迁移失败: cherry-pick 发生冲突。请先解决冲突后执行 `icode undo --recover continue`，或执行 `icode undo --recover abort` 回滚。',
         {
           code: 'MIGRATE_CHERRY_PICK_FAILED',
           cause: error,
@@ -429,6 +635,7 @@ export async function runMigrateWorkflow(options) {
     }
 
     return {
+      dryRun: false,
       sourceBranch,
       targetBranch,
       migratedCommits: commits.length,
@@ -442,7 +649,7 @@ export async function runMigrateWorkflow(options) {
       try {
         await git.checkout(originalBranch)
       } catch (error) {
-        logger.warn(`未能自动切回原分支 ${originalBranch}: ${error.message}`)
+        logWarn(options, `未能自动切回原分支 ${originalBranch}: ${error.message}`)
       }
     }
   }

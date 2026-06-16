@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import { normalizeLegacyArgs } from '../core/cli/args.js'
 import { IcodeError } from '../core/errors.js'
 import { getCompletionCandidates, renderCompletionScript } from '../core/cli/completion.js'
 
@@ -25,24 +26,25 @@ Examples:
  * 输入为隐藏命令的原始参数数组，输出为 current 和 previousWords。
  */
 function parseHiddenCompletionArgs(rawArgs) {
+  const args = normalizeLegacyArgs(rawArgs)
   let current = ''
-  let separatorIndex = rawArgs.indexOf('--')
+  let separatorIndex = args.indexOf('--')
 
   if (separatorIndex === -1) {
-    separatorIndex = rawArgs.length
+    separatorIndex = args.length
   }
 
   for (let index = 0; index < separatorIndex; index += 1) {
-    const token = rawArgs[index]
+    const token = args[index]
     if (token === '--current') {
-      current = rawArgs[index + 1] || ''
+      current = args[index + 1] || ''
       index += 1
     }
   }
 
   return {
     current,
-    previousWords: rawArgs.slice(separatorIndex + 1)
+    previousWords: args.slice(separatorIndex + 1)
   }
 }
 
@@ -51,8 +53,9 @@ function parseHiddenCompletionArgs(rawArgs) {
  * 输入为命令行参数数组，输出为脚本文本到标准输出。
  */
 export async function runCompletionCommand(rawArgs) {
+  const args = normalizeLegacyArgs(rawArgs)
   const parsed = parseArgs({
-    args: rawArgs,
+    args,
     allowPositionals: true,
     options: {
       help: { type: 'boolean', short: 'h', default: false }

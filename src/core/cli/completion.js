@@ -87,6 +87,27 @@ const ROOT_COMPLETION_SPEC = {
         { long: '--help', short: '-h' }
       ]
     },
+    ready: {
+      options: [
+        { long: '--repo-mode', valueSource: 'repo-mode' },
+        { long: '--json' },
+        { long: '--help', short: '-h' }
+      ]
+    },
+    save: {
+      options: [
+        { long: '--message', short: '-m', valueSource: 'text' },
+        { long: '--ai-commit' },
+        { long: '--profile', valueSource: 'ai-profile' },
+        { long: '--lang', valueSource: 'ai-commit-lang' },
+        { long: '--dry-run' },
+        { long: '--json' },
+        { long: '--repo-mode', valueSource: 'repo-mode' },
+        { long: '--no-verify' },
+        { long: '--yes', short: '-y' },
+        { long: '--help', short: '-h' }
+      ]
+    },
     push: {
       positionals: [{ valueSource: 'branch', repeat: true }],
       options: [
@@ -94,6 +115,7 @@ const ROOT_COMPLETION_SPEC = {
         { long: '--yes', short: '-y' },
         { long: '--local-merge' },
         { long: '--remote-merge', short: '-r' },
+        { long: '--dry-run' },
         { long: '--ai-commit' },
         { long: '--ai-profile', valueSource: 'ai-profile' },
         { long: '--help', short: '-h' },
@@ -135,6 +157,7 @@ const ROOT_COMPLETION_SPEC = {
         { long: '--ref', valueSource: 'ref' },
         { long: '--hash', valueSource: 'ref' },
         { long: '--recover', valueSource: 'undo-recover' },
+        { long: '--json' },
         { long: '--yes', short: '-y' },
         { long: '--repo-mode', valueSource: 'repo-mode' },
         { long: '--help', short: '-h' }
@@ -148,6 +171,8 @@ const ROOT_COMPLETION_SPEC = {
       options: [
         { long: '--interactive', short: '-i' },
         { long: '--range', valueSource: 'text' },
+        { long: '--dry-run' },
+        { long: '--json' },
         { long: '--push' },
         { long: '--yes', short: '-y' },
         { long: '--repo-mode', valueSource: 'repo-mode' },
@@ -248,6 +273,13 @@ const ROOT_COMPLETION_SPEC = {
           }
         }
       }
+    },
+    doctor: {
+      options: [
+        { long: '--repo-mode', valueSource: 'repo-mode' },
+        { long: '--json' },
+        { long: '--help', short: '-h' }
+      ]
     },
     explain: EXPLAIN_NODE,
     info: {

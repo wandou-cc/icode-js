@@ -7,6 +7,7 @@
 - 更稳定地处理复杂 Git 场景
 - 更好支持 `husky/git hooks` 校验链路
 - 默认识别“继承父级 Git 仓库”的目录结构
+- 提供面向人类和 AI agent 的安全场景入口，而不是复刻 Git 子命令
 - 采用更现代的 Node 20+ ESM 架构（无运行时第三方依赖）
 
 ## 安装
@@ -20,6 +21,9 @@ npm i -g @icode-js/icode
 ```bash
 icode help # 查看命令总览
 icode info
+icode ready
+icode save -m "feat: add login form"
+icode doctor
 icode config ai list
 ```
 
@@ -50,7 +54,7 @@ source <(icode completion zsh)
 
 ## AI 能力配置
 
-先配置一个 AI profile（支持 OpenAI/Anthropic/Ollama 四种接口格式）：
+先配置一个 AI profile（支持 OpenAI/Anthropic/Ollama 三种接口格式）：
 
 ```bash
 icode config ai set openai \
@@ -99,7 +103,74 @@ icode config ai options set explain --json '{"profile":"ollama","base":"origin/m
 icode config ai options set push --json '{"aiProfile":"ollama","aiCommitLang":"zh"}'
 ```
 
+## 健康检查
+
+```bash
+icode doctor
+icode doctor --json
+```
+
+`doctor` 会检查 Git 命令、`origin`、hooks、AI profile 与远程合并配置，并给出修复建议。建议新成员初始化环境后先执行一次。
+
+参数说明：
+
+- `--repo-mode auto|strict`：仓库模式（自动继承父仓库/禁止继承）
+- `--json`：输出机器可读 JSON，适合脚本或 CI 读取
+- `-h, --help`：查看帮助
+
 ## 核心命令
+
+### ready
+
+```bash
+icode ready
+icode ready --json
+```
+
+`ready` 是继续开发、保存或推送前的场景化检查入口，不会修改 Git 状态。它会检查：
+
+- 当前是否在明确分支上
+- 是否存在未完成的 `merge/rebase/cherry-pick/revert`
+- 是否存在未提交改动或冲突文件
+- 当前分支与 upstream 的 ahead/behind 关系
+- AI profile 与远程合并配置是否可用
+
+参数说明：
+
+- `--repo-mode auto|strict`：仓库模式（自动继承父仓库/禁止继承）
+- `--json`：输出机器可读 JSON，适合 AI agent 或脚本判断下一步
+- `-h, --help`：查看帮助
+
+### save
+
+```bash
+icode save -m "feat: add login form"
+icode save --ai-commit -y
+icode save -m "fix: adjust copy" --dry-run
+icode save --ai-commit --dry-run --json
+```
+
+`save` 是安全快速提交场景：检查状态 -> 暂存全部改动 -> 创建本地 commit。它不会 push，也不会隐式生成提交信息。
+
+- 无改动会直接失败
+- 存在冲突会直接失败
+- 存在未完成 Git 操作会直接失败
+- `--message` 和 `--ai-commit` 必须二选一
+- `--dry-run` 只检查并展示计划，不执行 `git add` 或 `git commit`
+- `--ai-commit` 必须使用已配置的 AI profile，不做静默降级
+
+参数说明：
+
+- `-m, --message <msg>`：指定提交信息
+- `--ai-commit`：使用 AI 根据全部未提交改动生成提交信息
+- `--profile <name>`：指定 AI profile（仅 `--ai-commit` 使用）
+- `--lang <zh|en>`：AI 提交信息语言，默认 `zh`
+- `--dry-run`：只检查并展示将提交的信息，不执行 add/commit
+- `--json`：输出机器可读 JSON
+- `--repo-mode auto|strict`：仓库模式（自动继承父仓库/禁止继承）
+- `--no-verify`：commit 时跳过 hook/husky 校验
+- `-y, --yes`：自动确认 AI 提交
+- `-h, --help`：查看帮助
 
 ### checkout
 
@@ -110,6 +181,7 @@ icode checkout <branch> [base] [--push-origin] [--pull-main] [--repo-mode auto|s
 - 本地存在分支: 直接切换
 - 远程存在分支: 本地创建 tracking 分支并切换
 - 都不存在: 从 `base` 或默认主分支创建
+- 执行前要求工作区干净，且不存在未完成的 merge/rebase/cherry-pick/revert
 
 参数说明：
 
@@ -125,7 +197,7 @@ icode checkout <branch> [base] [--push-origin] [--pull-main] [--repo-mode auto|s
 ### push
 
 ```bash
-icode push [targetBranch...] [-m "commit message"] [--ai-commit] [--pull-main] [--not-push-current] [-r|--remote-merge]
+icode push [targetBranch...] [-m "commit message"] [--ai-commit] [--pull-main] [--not-push-current] [-r|--remote-merge] [--dry-run]
 ```
 
 示例：
@@ -133,9 +205,13 @@ icode push [targetBranch...] [-m "commit message"] [--ai-commit] [--pull-main] [
 ```bash
 icode push -m "feat: release" # 提交并推送当前分支
 icode push release test -m "feat: batch publish" -y # 默认本地 merge 推送到多个分支
+icode push release test --dry-run # 只查看计划，不执行任何 Git/远程合并副作用
+icode push release test -r -y # 使用远程 MR 模式合并到多个目标分支
 ```
 
 - 自动 `add + commit + push`
+- 存在冲突或未完成 Git 操作时会直接停止
+- 本地 merge 冲突会暂停在目标分支现场；解决后执行 `icode undo --recover continue`，或执行 `icode undo --recover abort` 中止
 - 支持 `--ai-commit` 在 push 前自动生成并应用 AI 提交信息
 - 若仓库存在 husky/hooks/commitlint 规则，AI commit 会先扫描本地规范再生成提交信息
 - 支持把当前分支合并到多个目标分支
@@ -150,6 +226,7 @@ icode push release test -m "feat: batch publish" -y # 默认本地 merge 推送�
 - `-y, --yes`：自动确认（跳过确认提示）
 - `--local-merge`：显式声明使用本地 merge 模式（当前为默认行为，会切换分支并生成 merge commit）
 - `-r, --remote-merge`：改为远程 PR/MR 模式；会先推送源分支，再通过 API 创建合并请求；若发生冲突会暂停，并输出明确失败原因
+- `--dry-run`：只展示计划，不执行 commit/fetch/pull/push/merge/MR
 - `--ai-commit`：push 前自动执行 AI commit
 - `--ai-profile <name>`：指定 AI profile（用于 `--ai-commit`）
 - `--pull-main`：提交前同步主分支到当前分支
@@ -160,6 +237,7 @@ icode push release test -m "feat: batch publish" -y # 默认本地 merge 推送�
 - `-h, --help`：查看帮助
 
 说明：
+
 - `push` 的布尔开关（如 `--ai-commit`、`--pull-main`、`--no-verify`、`-y`）仅在命令行显式传入时生效。
 
 远程合并配置示例：
@@ -169,10 +247,13 @@ icode config platform remote-merge set --provider gitlab --api-key rm_xxx
 ```
 
 建议：
+
 - 密钥按平台维度管理，例如 GitLab / GitHub / 自建平台。
 - GitLab API 地址固定为仓库 `origin` 对应站点的 `/api/v4`，无需再单独配置服务地址。
 - 项目/仓库默认启用远程合并；如个别仓库不希望启用，可显式设置 `repositories.<repo>.remoteMerge.enabled=false`。
-- 远程合并会直接根据 `origin` 自动提取 GitLab 项目地址；若无法识别，会提示你修正仓库 remote 配置。
+- 远程合并始终根据 `origin` 自动提取 GitLab 项目地址；若无法识别，会提示你修正仓库 remote 配置。
+- GitLab 审批规则由 merge API 统一判断；若审批不足，会在 merge 阶段输出明确失败原因。
+- GitLab 合并检查会展示等待进度，并在长时间 pending 后超时退出，避免命令无限卡住。
 - 这样更符合密钥复用与安全边界，避免多个仓库重复维护同一平台 API 地址。
 
 ### ai
@@ -218,6 +299,7 @@ icode sync [branch...] [--all-local] [--merge-main] [--push]
 ```
 
 - 批量同步多个分支（fetch + pull）
+- 执行前要求当前处于普通分支、工作区干净，且不存在未完成 Git 操作
 - 可选自动同步全部本地分支（`--all-local`）
 - 可选把主分支自动 merge 到目标分支（`--merge-main`）
 - 可选同步后自动推送（`--push`）
@@ -241,6 +323,7 @@ icode clean [--merged-target <branch>] [--remote] [--force]
 ```
 
 - 安全清理“已合并”本地分支
+- 执行前要求当前处于普通分支、工作区干净，且不存在未完成 Git 操作
 - 默认保护当前分支/主分支/配置中的受保护分支
 - 可选同步删除远程分支（`--remote`）
 
@@ -275,13 +358,15 @@ icode tag [--name <tag>] [--message <msg>] [--from <ref>]
 
 ```bash
 icode undo [ref] [--mode revert|soft|mixed|hard] [--ref <ref>] [--hash <hash>] [--recover continue|abort|keep]
+icode undo --mode revert --ref HEAD --json
 ```
 
 - 向导式撤销命令（交互选择回滚策略）
 - 适合新人或低频 Git 操作场景
 - 也支持非交互参数：`--mode` + `--ref` / `--hash`
 - 支持用位置参数指定 commit hash，例如：`icode undo a1b2c3d --mode revert -y`
-- 检测到 revert/cherry-pick 冲突时，会提示继续或中止
+- 检测到 merge/revert/cherry-pick 冲突时，会提示继续或中止
+- 支持 `--json` 输出结构化结果；适合 AI agent 判断是否已恢复现场
 
 参数说明：
 
@@ -289,6 +374,7 @@ icode undo [ref] [--mode revert|soft|mixed|hard] [--ref <ref>] [--hash <hash>] [
 - `--ref <ref>`：回滚目标，默认按 mode 自动给出
 - `--hash <hash>`：按 commit hash 指定回滚目标（等同 `--ref`）
 - `--recover <action>`：冲突恢复策略（`continue|abort|keep`）
+- `--json`：输出机器可读 JSON
 - `-y, --yes`：自动确认（跳过确认提示）
 - `--repo-mode auto|strict`：仓库模式（自动继承父仓库/禁止继承）
 - `-h, --help`：查看帮助
@@ -297,11 +383,16 @@ icode undo [ref] [--mode revert|soft|mixed|hard] [--ref <ref>] [--hash <hash>] [
 
 ```bash
 icode migrate <sourceBranch> <targetBranch> [--range <from..to>] [--push]
+icode migrate <sourceBranch> <targetBranch> --dry-run --json
 ```
 
 - 将 source 分支的提交迁移到 target（底层是 `cherry-pick`）
 - 默认迁移 `target..source` 的增量提交
 - 可通过 `--range` 精确指定迁移范围
+- 执行前要求工作区干净，且不能存在未完成的 merge/rebase/cherry-pick/revert
+- 支持 `--dry-run` 输出 checkout/pull/cherry-pick/push 计划，不产生 Git 副作用
+- 支持 `--json` 输出结构化计划或执行结果，适合 AI agent 消费
+- 如果迁移冲突，可使用 `icode undo --recover continue|abort|keep` 处理现场
 
 参数说明：
 
@@ -309,6 +400,8 @@ icode migrate <sourceBranch> <targetBranch> [--range <from..to>] [--push]
 - `<targetBranch>`：迁移目标分支
 - `-i, --interactive`：交互模式（单选/多选 source/target 与迁移范围）
 - `--range <from..to>`：指定提交范围，例如 `main..feature-x`
+- `--dry-run`：只展示迁移计划，不 checkout/pull/cherry-pick/push
+- `--json`：输出机器可读 JSON
 - `--push`：迁移后自动推送 target 分支
 - `-y, --yes`：自动确认（跳过确认提示）
 - `--repo-mode auto|strict`：仓库模式（自动继承父仓库/禁止继承）
@@ -323,6 +416,7 @@ icode config get defaults.repoMode
 icode config set defaults.repoMode strict
 icode config protect add main release
 icode config protect list
+icode config platform remote-merge set --provider gitlab --api-key rm_xxx
 ```
 
 参数说明：
@@ -335,6 +429,8 @@ icode config protect list
 - `protect add <branch...>`：添加受保护分支
 - `protect remove <branch...>`：移除受保护分支
 - `ai <subcommand>`：AI profile 管理（见上文“AI 能力配置”）
+- `platform remote-merge show`：查看远程合并平台配置（密钥脱敏）
+- `platform remote-merge set --provider gitlab --api-key <key>`：写入 GitLab 远程合并密钥
 - `--repo-mode auto|strict`：仓库模式（仅影响 protect）
 - `-h, --help`：查看帮助
 
@@ -367,6 +463,10 @@ icode push -m "chore: hotfix" --no-verify
 
 - 默认 `--repo-mode auto`：自动定位到父仓库根目录执行
 - `--repo-mode strict`：检测到继承时直接阻断，避免误操作
+
+### 3) 非 Git 目录
+
+`icode` 不会在非 Git 目录中隐式执行 `git init`。如果需要初始化仓库，请先手动执行 `git init`，再运行 `icode` 命令。
 
 ## 开发
 

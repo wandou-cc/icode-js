@@ -4,11 +4,14 @@ import { runCodeReviewCommand } from './commands/codereview.js'
 import { runCompletionCommand, runHiddenCompletionCommand } from './commands/completion.js'
 import { runCheckoutCommand } from './commands/checkout.js'
 import { runConfigCommand } from './commands/config.js'
+import { runDoctorCommand } from './commands/doctor.js'
 import { runExplainCommand } from './commands/explain.js'
 import { printMainHelp } from './commands/help.js'
 import { runInfoCommand } from './commands/info.js'
 import { runMigrateCommand } from './commands/migrate.js'
 import { runPushCommand } from './commands/push.js'
+import { runReadyCommand } from './commands/ready.js'
+import { runSaveCommand } from './commands/save.js'
 import { runSyncCommand } from './commands/sync.js'
 import { runTagCommand } from './commands/tag.js'
 import { runUndoCommand } from './commands/undo.js'
@@ -35,6 +38,8 @@ const COMMANDS = {
   codereview: runCodeReviewCommand,
   completion: runCompletionCommand,
   checkout: runCheckoutCommand,
+  ready: runReadyCommand,
+  save: runSaveCommand,
   push: runPushCommand,
   sync: runSyncCommand,
   clean: runCleanCommand,
@@ -42,6 +47,7 @@ const COMMANDS = {
   migrate: runMigrateCommand,
   tag: runTagCommand,
   config: runConfigCommand,
+  doctor: runDoctorCommand,
   explain: runExplainCommand,
   info: runInfoCommand,
   help: async () => {

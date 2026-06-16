@@ -1,4 +1,5 @@
 import { askAi } from '../core/ai/client.js'
+import { buildLimitedDiffPrompt, formatDiffCoverage, summarizeDiffCoverage } from '../core/ai/diff-prompt.js'
 import { resolveAiDiffRange } from '../core/ai/diff-range.js'
 import { IcodeError } from '../core/errors.js'
 import { resolveGitContext } from '../core/git/context.js'
@@ -19,6 +20,14 @@ function joinSections(sections) {
     .join('\n\n')
 }
 
+// 构建 AI code review prompt 中的 diff 片段，输入完整 diff，输出受限 diff 与覆盖范围。
+function buildReviewDiffPrompt(diff) {
+  return buildLimitedDiffPrompt(diff, {
+    limit: 18000
+  })
+}
+
+// 执行 AI 代码审查工作流，输入 diff 范围和 AI 选项，输出审查文本与 diff 覆盖范围。
 export async function runAiCodeReviewWorkflow(options) {
   const context = await resolveGitContext({
     cwd: options.cwd,
@@ -101,10 +110,12 @@ export async function runAiCodeReviewWorkflow(options) {
     ])
   }
 
+  const limitedDiff = buildReviewDiffPrompt(diff)
+
   const review = await askAi(
     {
       systemPrompt: '你是严格的软件代码审查工程师，请优先关注 bug、安全风险、行为回归、缺失测试。输出中文 Markdown。',
-      userPrompt: `请按如下结构输出：\n1. Findings（按严重度从高到低）\n2. Open Questions\n3. Summary\n\nFocus: ${options.focus || 'general'}\nRange: ${rangeSpec}\nDiff Source: ${diffSource}\n\nDiff Stat:\n${truncate(stat, 3000)}\n\nName Status:\n${truncate(nameStatus, 3000)}\n\nUnified Diff:\n${truncate(diff, 18000)}`
+      userPrompt: `请按如下结构输出：\n1. Findings（按严重度从高到低）\n2. Open Questions\n3. Summary\n\nFocus: ${options.focus || 'general'}\nRange: ${rangeSpec}\nDiff Source: ${diffSource}\n\n${formatDiffCoverage(limitedDiff.coverage)}\n\nDiff Stat:\n${truncate(stat, 3000)}\n\nName Status:\n${truncate(nameStatus, 3000)}\n\nUnified Diff:\n${limitedDiff.diff}`
     },
     {
       profile: options.profile,
@@ -121,6 +132,7 @@ export async function runAiCodeReviewWorkflow(options) {
 
   return {
     rangeSpec,
-    review
+    review,
+    diffCoverage: summarizeDiffCoverage(limitedDiff.coverage)
   }
 }

@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import { normalizeLegacyArgs } from '../core/cli/args.js'
 import { logger } from '../core/tools/logger.js'
 import { runInfoWorkflow } from '../workflows/info-workflow.js'
 
@@ -16,9 +17,11 @@ Notes:
 `)
 }
 
+// 执行 info 子命令，输入原始参数，输出仓库与配置概览；参数会先归一化。
 export async function runInfoCommand(rawArgs) {
+  const args = normalizeLegacyArgs(rawArgs)
   const parsed = parseArgs({
-    args: rawArgs,
+    args,
     allowPositionals: true,
     options: {
       'repo-mode': { type: 'string', default: 'auto' },

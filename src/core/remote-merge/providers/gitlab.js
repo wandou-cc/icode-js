@@ -1,7 +1,10 @@
 import { IcodeError } from '../../errors.js'
+import { withSpinner } from '../../tools/loading.js'
+import { logger } from '../../tools/logger.js'
 import { normalizeRemoteMergeReason, parseRemoteMergePayload } from '../shared.js'
 
 const GITLAB_MERGE_STATUS_POLL_INTERVAL_MS = 1000
+const GITLAB_MERGE_STATUS_MAX_ATTEMPTS = 60
 const GITLAB_PENDING_MERGE_STATUSES = new Set([
   'unchecked',
   'checking',
@@ -18,6 +21,15 @@ const GITLAB_ACCEPTED_MERGE_STATUSES = new Set([
   'ci_must_pass',
   'merge_time'
 ])
+
+// 生成可读的 GitLab MR 标签，输入 MR id 与 URL，输出适合日志展示的短文本。
+function formatGitLabMergeRequestLabel(mergeRequestId, mergeRequestUrl) {
+  if (mergeRequestUrl) {
+    return `${logger.color('green', mergeRequestUrl)} (#${mergeRequestId})`
+  }
+
+  return `#${mergeRequestId}`
+}
 
 // 根据 Git remote URL 生成标准 GitLab 项目 URL，无法识别时返回空串。
 export function resolveGitLabProjectUrlFromRemote(remoteUrl = '') {
@@ -121,6 +133,24 @@ function delay(ms) {
   })
 }
 
+// 合并检查轮询间隔，测试可显式传入 0 以避免等待；输入 options，输出毫秒数。
+function resolvePollIntervalMs(options = {}) {
+  if (Number.isInteger(options.pollIntervalMs) && options.pollIntervalMs >= 0) {
+    return options.pollIntervalMs
+  }
+
+  return GITLAB_MERGE_STATUS_POLL_INTERVAL_MS
+}
+
+// 合并检查最大轮询次数，测试或调用方可显式缩短；输入 options，输出正整数次数。
+function resolveMaxPollAttempts(options = {}) {
+  if (Number.isInteger(options.maxPollAttempts) && options.maxPollAttempts > 0) {
+    return options.maxPollAttempts
+  }
+
+  return GITLAB_MERGE_STATUS_MAX_ATTEMPTS
+}
+
 // 执行一次 GitLab JSON 请求，并统一返回响应对象、原始文本和解析后的负载。
 async function performGitLabJsonRequest(endpoint, requestOptions, errorMessage) {
   let response
@@ -177,6 +207,27 @@ async function fetchGitLabMergeRequest(project, mergeRequestId, apiKey) {
     response,
     rawText,
     payload
+  }
+}
+
+// 构建 GitLab 状态轮询超时结果，输入阶段信息和最后一次响应，输出统一失败结构。
+function buildGitLabPollTimeoutResult(stage, mergeRequestId, mergeRequestUrl, maxAttempts, lastPayload) {
+  const status = typeof lastPayload?.detailed_merge_status === 'string' && lastPayload.detailed_merge_status.trim()
+    ? lastPayload.detailed_merge_status.trim()
+    : (typeof lastPayload?.merge_status === 'string' ? lastPayload.merge_status.trim() : '')
+  const reason = status
+    ? `GitLab 合并检查超时，最后状态: ${status}，已轮询 ${maxAttempts} 次。`
+    : `GitLab 合并检查超时，已轮询 ${maxAttempts} 次。`
+
+  return {
+    ok: false,
+    conflict: false,
+    status: 408,
+    reason,
+    step: stage,
+    mergeRequestId,
+    mergeRequestUrl,
+    payload: lastPayload
   }
 }
 
@@ -331,61 +382,97 @@ function buildGitLabMergeReadinessResult(payload, mergeRequestId, mergeRequestUr
 }
 
 // 轮询 GitLab MR，直到“是否允许 merge”检查完成。
-async function waitForGitLabMergeReadiness(project, mergeRequestId, mergeRequestUrl, apiKey) {
-  while (true) {
-    const mergeRequest = await fetchGitLabMergeRequest(project, mergeRequestId, apiKey)
-    if (!mergeRequest.response.ok) {
-      return buildGitLabFailedResult(mergeRequest.response, mergeRequest.rawText, mergeRequest.payload, {
-        step: 'inspect',
-        mergeRequestId,
-        mergeRequestUrl,
-        payload: {
-          create: null,
-          approve: null,
-          merge: null,
-          inspect: mergeRequest.payload
+async function waitForGitLabMergeReadiness(project, mergeRequestId, mergeRequestUrl, apiKey, options = {}) {
+  const maxAttempts = resolveMaxPollAttempts(options)
+  const pollIntervalMs = resolvePollIntervalMs(options)
+  let lastPayload = null
+
+  const pollResult = await withSpinner(
+    `等待 GitLab 完成合并前检查 ${formatGitLabMergeRequestLabel(mergeRequestId, mergeRequestUrl)}`,
+    async () => {
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const mergeRequest = await fetchGitLabMergeRequest(project, mergeRequestId, apiKey)
+        lastPayload = mergeRequest.payload
+        if (!mergeRequest.response.ok) {
+          return buildGitLabFailedResult(mergeRequest.response, mergeRequest.rawText, mergeRequest.payload, {
+            step: 'inspect',
+            mergeRequestId,
+            mergeRequestUrl,
+            payload: {
+              create: null,
+              merge: null,
+              inspect: mergeRequest.payload
+            }
+          })
         }
-      })
-    }
 
-    const result = buildGitLabMergeReadinessResult(mergeRequest.payload, mergeRequestId, mergeRequestUrl)
-    if (result) {
-      return result
-    }
+        const result = buildGitLabMergeReadinessResult(mergeRequest.payload, mergeRequestId, mergeRequestUrl)
+        if (result) {
+          return result
+        }
 
-    await delay(GITLAB_MERGE_STATUS_POLL_INTERVAL_MS)
+        if (attempt < maxAttempts) {
+          await delay(pollIntervalMs)
+        }
+      }
+
+      return null
+    }
+  )
+  if (pollResult) {
+    return pollResult
   }
+
+  return buildGitLabPollTimeoutResult('inspect', mergeRequestId, mergeRequestUrl, maxAttempts, lastPayload)
 }
 
 // 轮询 GitLab MR，直到异步冲突检查完成并得到可归档的最终状态。
-async function waitForGitLabMergeOutcome(project, mergeRequestId, mergeRequestUrl, apiKey) {
-  while (true) {
-    const mergeRequest = await fetchGitLabMergeRequest(project, mergeRequestId, apiKey)
-    if (!mergeRequest.response.ok) {
-      return buildGitLabFailedResult(mergeRequest.response, mergeRequest.rawText, mergeRequest.payload, {
-        step: 'inspect',
-        mergeRequestId,
-        mergeRequestUrl,
-        payload: {
-          create: null,
-          approve: null,
-          merge: null,
-          inspect: mergeRequest.payload
+async function waitForGitLabMergeOutcome(project, mergeRequestId, mergeRequestUrl, apiKey, options = {}) {
+  const maxAttempts = resolveMaxPollAttempts(options)
+  const pollIntervalMs = resolvePollIntervalMs(options)
+  let lastPayload = null
+
+  const pollResult = await withSpinner(
+    `等待 GitLab 完成远程合并 ${formatGitLabMergeRequestLabel(mergeRequestId, mergeRequestUrl)}`,
+    async () => {
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const mergeRequest = await fetchGitLabMergeRequest(project, mergeRequestId, apiKey)
+        lastPayload = mergeRequest.payload
+        if (!mergeRequest.response.ok) {
+          return buildGitLabFailedResult(mergeRequest.response, mergeRequest.rawText, mergeRequest.payload, {
+            step: 'inspect',
+            mergeRequestId,
+            mergeRequestUrl,
+            payload: {
+              create: null,
+              merge: null,
+              inspect: mergeRequest.payload
+            }
+          })
         }
-      })
-    }
 
-    const result = buildGitLabMergeStatusResult(mergeRequest.payload, mergeRequestId, mergeRequestUrl)
-    if (result) {
-      return result
-    }
+        const result = buildGitLabMergeStatusResult(mergeRequest.payload, mergeRequestId, mergeRequestUrl)
+        if (result) {
+          return result
+        }
 
-    await delay(GITLAB_MERGE_STATUS_POLL_INTERVAL_MS)
+        if (attempt < maxAttempts) {
+          await delay(pollIntervalMs)
+        }
+      }
+
+      return null
+    }
+  )
+  if (pollResult) {
+    return pollResult
   }
+
+  return buildGitLabPollTimeoutResult('inspect', mergeRequestId, mergeRequestUrl, maxAttempts, lastPayload)
 }
 
-// 根据创建 MR 的结果先执行审批，再提交自动合并，确保完整走完 GitLab 审批合并链路。
-async function processGitLabMergeRequest(project, createPayload, apiKey) {
+// 根据创建 MR 的结果提交自动合并，由 GitLab merge 接口按项目审批规则判定是否允许合并。
+async function processGitLabMergeRequest(project, createPayload, apiKey, options = {}) {
   const mergeRequestId = createPayload?.iid ? String(createPayload.iid) : ''
   const mergeRequestUrl = typeof createPayload?.web_url === 'string' ? createPayload.web_url : ''
 
@@ -400,56 +487,26 @@ async function processGitLabMergeRequest(project, createPayload, apiKey) {
       mergeRequestUrl,
       payload: {
         create: createPayload,
+        inspect: null,
         merge: null
       }
     }
   }
 
   const sourceSha = typeof createPayload?.sha === 'string' ? createPayload.sha.trim() : ''
-  const readinessResult = await waitForGitLabMergeReadiness(project, mergeRequestId, mergeRequestUrl, apiKey)
+  logger.success(`GitLab 合并请求已创建: ${formatGitLabMergeRequestLabel(mergeRequestId, mergeRequestUrl)}`)
+  const readinessResult = await waitForGitLabMergeReadiness(project, mergeRequestId, mergeRequestUrl, apiKey, options)
   if (!readinessResult.ok) {
     return {
       ...readinessResult,
       payload: {
         create: createPayload,
-        approve: null,
         merge: null,
         inspect: readinessResult.payload
       }
     }
   }
-
-  const approveRequestBody = {}
-  if (sourceSha) {
-    approveRequestBody.sha = sourceSha
-  }
-
-  const approveEndpoint = `${project.baseUrl}/api/v4/projects/${project.projectId}/merge_requests/${mergeRequestId}/approve`
-  const approveResult = await performGitLabJsonRequest(
-    approveEndpoint,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'PRIVATE-TOKEN': apiKey
-      },
-      body: JSON.stringify(approveRequestBody)
-    },
-    'GitLab 合并审批请求失败'
-  )
-
-  if (!approveResult.response.ok) {
-    return buildGitLabFailedResult(approveResult.response, approveResult.rawText, approveResult.payload, {
-      step: 'approve',
-      mergeRequestId,
-      mergeRequestUrl,
-      payload: {
-        create: createPayload,
-        approve: approveResult.payload,
-        merge: null
-      }
-    })
-  }
+  logger.success(`GitLab 合并前检查通过: ${formatGitLabMergeRequestLabel(mergeRequestId, mergeRequestUrl)}`)
 
   const mergeRequestBody = {
     auto_merge: true
@@ -459,17 +516,20 @@ async function processGitLabMergeRequest(project, createPayload, apiKey) {
   }
 
   const mergeEndpoint = `${project.baseUrl}/api/v4/projects/${project.projectId}/merge_requests/${mergeRequestId}/merge`
-  const mergeResult = await performGitLabJsonRequest(
-    mergeEndpoint,
-    {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'PRIVATE-TOKEN': apiKey
+  const mergeResult = await withSpinner(
+    `提交 GitLab 自动合并 ${formatGitLabMergeRequestLabel(mergeRequestId, mergeRequestUrl)}`,
+    () => performGitLabJsonRequest(
+      mergeEndpoint,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'PRIVATE-TOKEN': apiKey
+        },
+        body: JSON.stringify(mergeRequestBody)
       },
-      body: JSON.stringify(mergeRequestBody)
-    },
-    'GitLab 自动合并请求失败'
+      'GitLab 自动合并请求失败'
+    )
   )
 
   if (!mergeResult.response.ok) {
@@ -479,18 +539,17 @@ async function processGitLabMergeRequest(project, createPayload, apiKey) {
       mergeRequestUrl,
       payload: {
         create: createPayload,
-        approve: approveResult.payload,
         merge: mergeResult.payload
       }
     })
   }
 
-  const finalResult = await waitForGitLabMergeOutcome(project, mergeRequestId, mergeRequestUrl, apiKey)
+  logger.success(`GitLab 自动合并已提交: ${formatGitLabMergeRequestLabel(mergeRequestId, mergeRequestUrl)}`)
+  const finalResult = await waitForGitLabMergeOutcome(project, mergeRequestId, mergeRequestUrl, apiKey, options)
   return {
     ...finalResult,
     payload: {
       create: createPayload,
-      approve: approveResult.payload,
       merge: mergeResult.payload,
       inspect: finalResult.payload
     }
@@ -533,5 +592,5 @@ export async function requestGitLabRemoteMerge(options = {}) {
     })
   }
 
-  return processGitLabMergeRequest(project, payload, apiKey)
+  return processGitLabMergeRequest(project, payload, apiKey, options)
 }

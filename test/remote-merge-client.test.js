@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { requestRemoteMerge, resolveRemoteMergeProjectUrl } from '../src/core/remote-merge/client.js'
+import { logger } from '../src/core/tools/logger.js'
 
 test('remote-merge-client dispatches project url resolution by provider', () => {
   assert.equal(
@@ -67,18 +68,6 @@ test('remote-merge-client dispatches request to gitlab provider', async () => {
       if (calls.length === 3) {
         return {
           ok: true,
-          status: 201,
-          async text() {
-            return JSON.stringify({
-              approved: true
-            })
-          }
-        }
-      }
-
-      if (calls.length === 4) {
-        return {
-          ok: true,
           status: 200,
           async text() {
             return JSON.stringify({
@@ -128,13 +117,6 @@ test('remote-merge-client dispatches request to gitlab provider', async () => {
         body: null
       },
       {
-        url: 'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/8/approve',
-        method: 'POST',
-        body: {
-          sha: 'abc123'
-        }
-      },
-      {
         url: 'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/8/merge',
         method: 'PUT',
         body: {
@@ -161,9 +143,6 @@ test('remote-merge-client dispatches request to gitlab provider', async () => {
           iid: 8,
           sha: 'abc123',
           web_url: 'https://gitlab.example.com/group/project/-/merge_requests/8'
-        },
-        approve: {
-          approved: true
         },
         merge: {
           merge_when_pipeline_succeeds: true
@@ -218,19 +197,6 @@ test('remote-merge-client uses host api root and full project path from origin u
       }
 
       if (calls.length === 3) {
-        assert.equal(url, 'https://icode.izuche.com/api/v4/projects/web%2Fizu-dataai-ui-client/merge_requests/11/approve')
-        return {
-          ok: true,
-          status: 201,
-          async text() {
-            return JSON.stringify({
-              approved: true
-            })
-          }
-        }
-      }
-
-      if (calls.length === 4) {
         assert.equal(url, 'https://icode.izuche.com/api/v4/projects/web%2Fizu-dataai-ui-client/merge_requests/11/merge')
         return {
           ok: true,
@@ -270,8 +236,128 @@ test('remote-merge-client uses host api root and full project path from origin u
     assert.equal(result.ok, true)
     assert.equal(result.mergeRequestId, '11')
     assert.equal(result.mergeRequestUrl, 'https://icode.izuche.com/web/izu-dataai-ui-client/-/merge_requests/11')
-    assert.equal(calls.length, 5)
+    assert.equal(calls.length, 4)
   } finally {
+    global.fetch = originalFetch
+  }
+})
+
+test('remote-merge-client times out pending gitlab merge checks', async () => {
+  const originalFetch = global.fetch
+
+  try {
+    const calls = []
+    global.fetch = async (url, requestOptions) => {
+      calls.push({
+        url,
+        method: requestOptions.method
+      })
+
+      if (calls.length === 1) {
+        return {
+          ok: true,
+          status: 201,
+          async text() {
+            return JSON.stringify({
+              iid: 21,
+              sha: 'pending123',
+              web_url: 'https://gitlab.example.com/group/project/-/merge_requests/21'
+            })
+          }
+        }
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            state: 'opened',
+            detailed_merge_status: 'checking'
+          })
+        }
+      }
+    }
+
+    const result = await requestRemoteMerge({
+      provider: 'gitlab',
+      apiKey: 'rm_test_key',
+      projectUrl: 'https://gitlab.example.com/group/project',
+      sourceBranch: 'source',
+      targetBranch: 'target',
+      mergeRequestTitle: 'feat(remote): pending merge request',
+      mergeRequestDescription: 'feat(remote): pending merge request',
+      maxPollAttempts: 2,
+      pollIntervalMs: 0
+    })
+
+    assert.equal(result.ok, false)
+    assert.equal(result.status, 408)
+    assert.equal(result.step, 'inspect')
+    assert.match(result.reason, /GitLab 合并检查超时/)
+    assert.equal(calls.length, 3)
+  } finally {
+    global.fetch = originalFetch
+  }
+})
+
+test('remote-merge-client does not print repeated pending gitlab polling logs', async () => {
+  const originalFetch = global.fetch
+  const originalInfo = logger.info
+  const capturedInfoLogs = []
+
+  logger.info = (message) => {
+    capturedInfoLogs.push(String(message))
+  }
+
+  try {
+    const calls = []
+    global.fetch = async () => {
+      calls.push(true)
+
+      if (calls.length === 1) {
+        return {
+          ok: true,
+          status: 201,
+          async text() {
+            return JSON.stringify({
+              iid: 31,
+              sha: 'pending-log-check',
+              web_url: 'https://gitlab.example.com/group/project/-/merge_requests/31'
+            })
+          }
+        }
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            state: 'opened',
+            detailed_merge_status: 'checking'
+          })
+        }
+      }
+    }
+
+    const result = await requestRemoteMerge({
+      provider: 'gitlab',
+      apiKey: 'rm_test_key',
+      projectUrl: 'https://gitlab.example.com/group/project',
+      sourceBranch: 'source',
+      targetBranch: 'target',
+      mergeRequestTitle: 'feat(remote): pending merge request',
+      mergeRequestDescription: 'feat(remote): pending merge request',
+      maxPollAttempts: 3,
+      pollIntervalMs: 0
+    })
+
+    assert.equal(result.status, 408)
+    assert.equal(calls.length, 4)
+    assert.deepEqual(capturedInfoLogs, [])
+  } finally {
+    logger.info = originalInfo
     global.fetch = originalFetch
   }
 })

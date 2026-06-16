@@ -5,7 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { runCommand } from '../src/core/commands/shell.js'
 import { upsertAiProfile, useAiProfile } from '../src/core/ai/config.js'
-import { getRepoPolicy, setPlatformConfig, setRepoPolicy } from '../src/core/config/store.js'
+import { setPlatformConfig, setRepoPolicy } from '../src/core/config/store.js'
 import { runPushWorkflow } from '../src/workflows/push-workflow.js'
 import { GitService } from '../src/core/git/service.js'
 
@@ -71,6 +71,38 @@ async function resolveRepoRoot(repoPath) {
   return result.stdout.trim()
 }
 
+test('push-workflow dry-run returns plan without mutating repository', async () => {
+  const fixture = await createRemoteMergeFixture()
+  const originalBranch = await gitStdout(fixture.repoPath, ['branch', '--show-current'])
+  const originalHead = await gitStdout(fixture.repoPath, ['rev-parse', 'HEAD'])
+
+  fs.writeFileSync(path.join(fixture.repoPath, 'dry-run.txt'), 'dry-run only\n', 'utf8')
+
+  const result = await runPushWorkflow({
+    cwd: fixture.repoPath,
+    targetBranches: ['test'],
+    message: 'feat: dry run',
+    yes: true,
+    repoMode: 'auto',
+    dryRun: true
+  })
+
+  assert.equal(result.dryRun, true)
+  assert.deepEqual(result.plan.branchTargets, ['source', 'test'])
+  assert.deepEqual(result.plan.steps.map((step) => step.action), [
+    'commit-if-needed',
+    'push-current',
+    'local-merge'
+  ])
+
+  const currentBranch = await gitStdout(fixture.repoPath, ['branch', '--show-current'])
+  const currentHead = await gitStdout(fixture.repoPath, ['rev-parse', 'HEAD'])
+  const status = await git(fixture.repoPath, ['status', '--short'])
+  assert.equal(currentBranch, originalBranch)
+  assert.equal(currentHead, originalHead)
+  assert.match(status.stdout, /dry-run\.txt/)
+})
+
 test('push-workflow uses local merge strategy by default for target branches', async () => {
   const fixture = await createRemoteMergeFixture()
 
@@ -85,6 +117,56 @@ test('push-workflow uses local merge strategy by default for target branches', a
     { branch: 'source', status: 'pushed' },
     { branch: 'test', status: 'merged-and-pushed' }
   ])
+})
+
+test('push-workflow pulls remote target before local merge', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-push-workflow-test-'))
+  const remotePath = path.join(tempRoot, 'remote.git')
+  const repoPath = path.join(tempRoot, 'repo')
+  const otherPath = path.join(tempRoot, 'other')
+
+  try {
+    await git(tempRoot, ['init', '--bare', remotePath])
+    await initRepo(repoPath)
+    await writeAndCommit(repoPath, 'base.txt', 'base\n', 'chore: init')
+    const defaultBranch = await gitStdout(repoPath, ['branch', '--show-current'])
+    await git(repoPath, ['remote', 'add', 'origin', remotePath])
+    await git(repoPath, ['push', '-u', 'origin', defaultBranch])
+
+    await git(repoPath, ['checkout', '-b', 'dev'])
+    await writeAndCommit(repoPath, 'dev.txt', 'dev base\n', 'feat: dev base')
+    await git(repoPath, ['push', '-u', 'origin', 'dev'])
+
+    await git(tempRoot, ['clone', remotePath, otherPath])
+    await git(otherPath, ['config', 'user.email', 'other@example.com'])
+    await git(otherPath, ['config', 'user.name', 'other'])
+    await git(otherPath, ['checkout', 'dev'])
+    await writeAndCommit(otherPath, 'remote-dev.txt', 'remote latest dev\n', 'feat: remote dev latest')
+    await git(otherPath, ['push'])
+
+    await git(repoPath, ['checkout', defaultBranch])
+    await git(repoPath, ['checkout', '-b', 'source'])
+    await writeAndCommit(repoPath, 'source.txt', 'source change\n', 'feat: source change')
+
+    const result = await runPushWorkflow({
+      cwd: repoPath,
+      targetBranches: ['dev'],
+      notPushCurrent: true,
+      yes: true,
+      repoMode: 'auto'
+    })
+
+    await git(repoPath, ['fetch'])
+    const originDevFiles = await git(repoPath, ['ls-tree', '--name-only', 'origin/dev'])
+
+    assert.deepEqual(result.summary, [
+      { branch: 'dev', status: 'merged-and-pushed' }
+    ])
+    assert.match(originDevFiles.stdout, /remote-dev\.txt/)
+    assert.match(originDevFiles.stdout, /source\.txt/)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
 })
 
 test('push-workflow with ai-commit commits and pushes untracked files without manual git add', async () => {
@@ -149,6 +231,147 @@ test('push-workflow with ai-commit commits and pushes untracked files without ma
   }
 })
 
+test('push-workflow rejects conflicted worktree before commit or push', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-push-workflow-test-'))
+  const repoPath = path.join(tempRoot, 'repo')
+
+  try {
+    await initRepo(repoPath)
+    await writeAndCommit(repoPath, 'conflict.txt', 'base\n', 'chore: init conflict file')
+    const defaultBranch = await gitStdout(repoPath, ['branch', '--show-current'])
+
+    await git(repoPath, ['checkout', '-b', 'other'])
+    await writeAndCommit(repoPath, 'conflict.txt', 'other\n', 'feat: other change')
+
+    await git(repoPath, ['checkout', defaultBranch])
+    await writeAndCommit(repoPath, 'conflict.txt', 'current\n', 'feat: current change')
+    await git(repoPath, ['merge', 'other'], { allowFailure: true })
+
+    await assert.rejects(
+      () => runPushWorkflow({
+        cwd: repoPath,
+        message: 'feat: should not commit conflict',
+        yes: true,
+        repoMode: 'auto'
+      }),
+      (error) => error.code === 'PUSH_GIT_OPERATION_IN_PROGRESS' && error.meta.operation === 'merge'
+    )
+
+    const operation = await git(repoPath, ['rev-parse', '--verify', 'MERGE_HEAD'], { allowFailure: true })
+    assert.equal(operation.exitCode, 0)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test('push-workflow pauses when target pull creates a merge conflict', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-push-workflow-test-'))
+  const remotePath = path.join(tempRoot, 'remote.git')
+  const repoPath = path.join(tempRoot, 'repo')
+  const otherPath = path.join(tempRoot, 'other')
+
+  try {
+    await git(tempRoot, ['init', '--bare', remotePath])
+    await initRepo(repoPath)
+    await writeAndCommit(repoPath, 'shared.txt', 'base\n', 'chore: init')
+    const defaultBranch = await gitStdout(repoPath, ['branch', '--show-current'])
+    await git(repoPath, ['remote', 'add', 'origin', remotePath])
+    await git(repoPath, ['push', '-u', 'origin', defaultBranch])
+    await git(repoPath, ['checkout', '-b', 'dev'])
+    await git(repoPath, ['push', '-u', 'origin', 'dev'])
+
+    fs.writeFileSync(path.join(repoPath, 'shared.txt'), 'local dev\n', 'utf8')
+    await git(repoPath, ['commit', '-am', 'feat: local dev change'])
+
+    await git(tempRoot, ['clone', remotePath, otherPath])
+    await git(otherPath, ['config', 'user.email', 'other@example.com'])
+    await git(otherPath, ['config', 'user.name', 'other'])
+    await git(otherPath, ['checkout', 'dev'])
+    fs.writeFileSync(path.join(otherPath, 'shared.txt'), 'remote dev\n', 'utf8')
+    await git(otherPath, ['commit', '-am', 'feat: remote dev change'])
+    await git(otherPath, ['push'])
+
+    await git(repoPath, ['checkout', defaultBranch])
+    await git(repoPath, ['checkout', '-b', 'source'])
+    await writeAndCommit(repoPath, 'source.txt', 'source\n', 'feat: source change')
+
+    await assert.rejects(
+      () => runPushWorkflow({
+        cwd: repoPath,
+        targetBranches: ['dev'],
+        notPushCurrent: true,
+        yes: true,
+        repoMode: 'auto'
+      }),
+      (error) => {
+        assert.equal(error.code, 'PUSH_LOCAL_MERGE_PAUSED')
+        assert.equal(error.meta.step, 'pull-target')
+        assert.match(error.message, /本地合并冲突/)
+        return true
+      }
+    )
+
+    const currentBranch = await gitStdout(repoPath, ['branch', '--show-current'])
+    const mergeHead = await git(repoPath, ['rev-parse', '--verify', 'MERGE_HEAD'], { allowFailure: true })
+
+    assert.equal(currentBranch, 'dev')
+    assert.equal(mergeHead.exitCode, 0)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test('push-workflow pauses on local merge conflict and keeps target branch checkout', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-push-workflow-test-'))
+  const remotePath = path.join(tempRoot, 'remote.git')
+  const repoPath = path.join(tempRoot, 'repo')
+
+  try {
+    await git(tempRoot, ['init', '--bare', remotePath])
+    await initRepo(repoPath)
+    await writeAndCommit(repoPath, 'shared.txt', 'base\n', 'chore: init')
+    const defaultBranch = await gitStdout(repoPath, ['branch', '--show-current'])
+    await git(repoPath, ['remote', 'add', 'origin', remotePath])
+    await git(repoPath, ['push', '-u', 'origin', defaultBranch])
+
+    await git(repoPath, ['checkout', '-b', 'dev'])
+    fs.writeFileSync(path.join(repoPath, 'shared.txt'), 'dev\n', 'utf8')
+    await git(repoPath, ['commit', '-am', 'feat: dev change'])
+    await git(repoPath, ['push', '-u', 'origin', 'dev'])
+
+    await git(repoPath, ['checkout', defaultBranch])
+    await git(repoPath, ['checkout', '-b', 'source'])
+    fs.writeFileSync(path.join(repoPath, 'shared.txt'), 'source\n', 'utf8')
+    await git(repoPath, ['commit', '-am', 'feat: source change'])
+
+    await assert.rejects(
+      () => runPushWorkflow({
+        cwd: repoPath,
+        targetBranches: ['dev'],
+        notPushCurrent: true,
+        yes: true,
+        repoMode: 'auto'
+      }),
+      (error) => {
+        assert.equal(error.code, 'PUSH_LOCAL_MERGE_PAUSED')
+        assert.equal(error.meta.step, 'merge-target')
+        assert.match(error.message, /本地合并冲突/)
+        return true
+      }
+    )
+
+    const currentBranch = await gitStdout(repoPath, ['branch', '--show-current'])
+    const mergeHead = await git(repoPath, ['rev-parse', '--verify', 'MERGE_HEAD'], { allowFailure: true })
+    const status = await git(repoPath, ['status', '--short'])
+
+    assert.equal(currentBranch, 'dev')
+    assert.equal(mergeHead.exitCode, 0)
+    assert.match(status.stdout, /UU shared\.txt/)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
 test('push-workflow remote merge pauses with clear conflict reason', async () => {
   const fixture = await createRemoteMergeFixture()
   const originalFetch = global.fetch
@@ -160,8 +383,7 @@ test('push-workflow remote merge pauses with clear conflict reason', async () =>
     process.env.ICODE_CONFIG_PATH = path.join(path.dirname(fixture.repoPath), 'remote-merge-config.json')
     setRepoPolicy(repoRoot, {
       remoteMerge: {
-        enabled: true,
-        projectUrl: 'https://gitlab.example.com/group/project'
+        enabled: true
       }
     })
     setPlatformConfig('remoteMerge', {
@@ -222,8 +444,7 @@ test('push-workflow remote merge uses gitlab fixed api endpoint from origin', as
     process.env.ICODE_CONFIG_PATH = path.join(path.dirname(fixture.repoPath), 'remote-merge-config.json')
     setRepoPolicy(repoRoot, {
       remoteMerge: {
-        enabled: true,
-        projectUrl: ''
+        enabled: true
       }
     })
     setPlatformConfig('remoteMerge', {
@@ -267,19 +488,7 @@ test('push-workflow remote merge uses gitlab fixed api endpoint from origin', as
         }
       }
 
-      if (fetchCalls.length === 3) {
-        return {
-          ok: true,
-          status: 201,
-          async text() {
-            return JSON.stringify({
-              approved: true
-            })
-          }
-        }
-      }
-
-      if (fetchCalls.length === 5) {
+      if (fetchCalls.length === 4) {
         return {
           ok: true,
           status: 200,
@@ -339,13 +548,6 @@ test('push-workflow remote merge uses gitlab fixed api endpoint from origin', as
         body: null
       },
       {
-        url: 'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/1/approve',
-        method: 'POST',
-        body: {
-          sha: 'abc123'
-        }
-      },
-      {
         url: 'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/1/merge',
         method: 'PUT',
         body: {
@@ -360,8 +562,6 @@ test('push-workflow remote merge uses gitlab fixed api endpoint from origin', as
       }
     ])
 
-    const policy = getRepoPolicy(repoRoot)
-    assert.equal(policy.remoteMerge.projectUrl, '')
   } finally {
     GitService.prototype.getRemoteUrl = originalGetRemoteUrl
     global.fetch = originalFetch
@@ -384,8 +584,7 @@ test('push-workflow remote merge auto-detects project url from origin without st
     process.env.ICODE_CONFIG_PATH = path.join(path.dirname(fixture.repoPath), 'remote-merge-config.json')
     setRepoPolicy(repoRoot, {
       remoteMerge: {
-        enabled: true,
-        projectUrl: ''
+        enabled: true
       }
     })
     setPlatformConfig('remoteMerge', {
@@ -425,19 +624,7 @@ test('push-workflow remote merge auto-detects project url from origin without st
         }
       }
 
-      if (fetchCalls.length === 3) {
-        return {
-          ok: true,
-          status: 201,
-          async text() {
-            return JSON.stringify({
-              approved: true
-            })
-          }
-        }
-      }
-
-      if (fetchCalls.length === 5) {
+      if (fetchCalls.length === 4) {
         return {
           ok: true,
           status: 200,
@@ -480,14 +667,121 @@ test('push-workflow remote merge auto-detects project url from origin without st
       }
     ])
 
-    const policy = getRepoPolicy(repoRoot)
-    assert.equal(policy.remoteMerge.projectUrl, '')
     assert.deepEqual(fetchCalls, [
       'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests',
       'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/2?with_merge_status_recheck=true',
-      'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/2/approve',
       'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/2/merge',
       'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/2?with_merge_status_recheck=true'
+    ])
+  } finally {
+    GitService.prototype.getRemoteUrl = originalGetRemoteUrl
+    global.fetch = originalFetch
+    if (originalConfigPath == null) {
+      delete process.env.ICODE_CONFIG_PATH
+    } else {
+      process.env.ICODE_CONFIG_PATH = originalConfigPath
+    }
+  }
+})
+
+test('push-workflow remote merge ignores legacy project url and uses origin', async () => {
+  const fixture = await createRemoteMergeFixture()
+  const originalFetch = global.fetch
+  const originalConfigPath = process.env.ICODE_CONFIG_PATH
+  const originalGetRemoteUrl = GitService.prototype.getRemoteUrl
+
+  try {
+    const repoRoot = await resolveRepoRoot(fixture.repoPath)
+    process.env.ICODE_CONFIG_PATH = path.join(path.dirname(fixture.repoPath), 'remote-merge-config.json')
+    setRepoPolicy(repoRoot, {
+      remoteMerge: {
+        enabled: true,
+        projectUrl: 'https://gitlab.override.example.com/override/group/project'
+      }
+    })
+    setPlatformConfig('remoteMerge', {
+      provider: 'gitlab',
+      apiKey: 'rm_test_key'
+    })
+    GitService.prototype.getRemoteUrl = async () => 'git@gitlab.example.com:group/project.git'
+
+    const fetchCalls = []
+    global.fetch = async (url, requestOptions = {}) => {
+      fetchCalls.push(url)
+
+      if (fetchCalls.length === 1) {
+        return {
+          ok: true,
+          status: 201,
+          async text() {
+            return JSON.stringify({
+              web_url: 'https://gitlab.example.com/group/project/-/merge_requests/9',
+              iid: 9
+            })
+          }
+        }
+      }
+
+      if (fetchCalls.length === 2) {
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              state: 'opened',
+              detailed_merge_status: 'mergeable'
+            })
+          }
+        }
+      }
+
+      if (fetchCalls.length === 4) {
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              state: 'opened',
+              merge_when_pipeline_succeeds: true,
+              detailed_merge_status: 'ci_still_running'
+            })
+          }
+        }
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            merge_when_pipeline_succeeds: true
+          })
+        }
+      }
+    }
+
+    const result = await runPushWorkflow({
+      cwd: fixture.repoPath,
+      targetBranches: ['test'],
+      yes: true,
+      repoMode: 'auto',
+      remoteMerge: true
+    })
+
+    assert.deepEqual(result.summary, [
+      { branch: 'source', status: 'pushed' },
+      {
+        branch: 'test',
+        status: 'remote-merged-and-pushed',
+        mergeRequestUrl: 'https://gitlab.example.com/group/project/-/merge_requests/9',
+        mergeRequestId: '9'
+      }
+    ])
+    assert.deepEqual(fetchCalls, [
+      'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests',
+      'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/9?with_merge_status_recheck=true',
+      'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/9/merge',
+      'https://gitlab.example.com/api/v4/projects/group%2Fproject/merge_requests/9?with_merge_status_recheck=true'
     ])
   } finally {
     GitService.prototype.getRemoteUrl = originalGetRemoteUrl
@@ -511,8 +805,7 @@ test('push-workflow remote merge succeeds when api returns ok', async () => {
     process.env.ICODE_CONFIG_PATH = path.join(path.dirname(fixture.repoPath), 'remote-merge-config.json')
     setRepoPolicy(repoRoot, {
       remoteMerge: {
-        enabled: true,
-        projectUrl: 'https://gitlab.example.com/group/project'
+        enabled: true
       }
     })
     setPlatformConfig('remoteMerge', {
@@ -551,19 +844,7 @@ test('push-workflow remote merge succeeds when api returns ok', async () => {
         }
       }
 
-      if (callIndex === 3) {
-        return {
-          ok: true,
-          status: 201,
-          async text() {
-            return JSON.stringify({
-              approved: true
-            })
-          }
-        }
-      }
-
-      if (callIndex === 5) {
+      if (callIndex === 4) {
         return {
           ok: true,
           status: 200,
@@ -608,7 +889,7 @@ test('push-workflow remote merge succeeds when api returns ok', async () => {
 
     const currentBranch = await gitStdout(fixture.repoPath, ['branch', '--show-current'])
     assert.equal(currentBranch, 'source')
-    assert.equal(callIndex, 5)
+    assert.equal(callIndex, 4)
   } finally {
     GitService.prototype.getRemoteUrl = originalGetRemoteUrl
     global.fetch = originalFetch
@@ -620,7 +901,7 @@ test('push-workflow remote merge succeeds when api returns ok', async () => {
   }
 })
 
-test('push-workflow remote merge pauses when approval endpoint rejects request', async () => {
+test('push-workflow remote merge lets gitlab merge endpoint enforce approval rules', async () => {
   const fixture = await createRemoteMergeFixture()
   const originalFetch = global.fetch
   const originalConfigPath = process.env.ICODE_CONFIG_PATH
@@ -631,8 +912,7 @@ test('push-workflow remote merge pauses when approval endpoint rejects request',
     process.env.ICODE_CONFIG_PATH = path.join(path.dirname(fixture.repoPath), 'remote-merge-config.json')
     setRepoPolicy(repoRoot, {
       remoteMerge: {
-        enabled: true,
-        projectUrl: 'https://gitlab.example.com/group/project'
+        enabled: true
       }
     })
     setPlatformConfig('remoteMerge', {
@@ -676,7 +956,7 @@ test('push-workflow remote merge pauses when approval endpoint rejects request',
         status: 401,
         async text() {
           return JSON.stringify({
-            message: 'Not allowed to approve this merge request'
+            message: 'Required approvals are missing'
           })
         }
       }
@@ -692,7 +972,7 @@ test('push-workflow remote merge pauses when approval endpoint rejects request',
       }),
       (error) => {
         assert.equal(error.code, 'PUSH_REMOTE_MERGE_PAUSED')
-        assert.match(error.message, /远程合并失败\(approve\): Not allowed to approve this merge request/)
+        assert.match(error.message, /远程合并失败\(merge\): Required approvals are missing/)
         return true
       }
     )
@@ -721,8 +1001,7 @@ test('push-workflow remote merge runs branches concurrently and marks conflicted
     process.env.ICODE_CONFIG_PATH = path.join(path.dirname(fixture.repoPath), 'remote-merge-config.json')
     setRepoPolicy(repoRoot, {
       remoteMerge: {
-        enabled: true,
-        projectUrl: 'https://gitlab.example.com/group/project'
+        enabled: true
       }
     })
     setPlatformConfig('remoteMerge', {
@@ -751,18 +1030,6 @@ test('push-workflow remote merge runs branches concurrently and marks conflicted
               iid: Number(mergeRequestId),
               sha: `${mergeRequestId}abc`,
               web_url: `https://gitlab.example.com/group/project/-/merge_requests/${mergeRequestId}`
-            })
-          }
-        }
-      }
-
-      if (url.includes('/approve') && requestOptions.method === 'POST') {
-        return {
-          ok: true,
-          status: 201,
-          async text() {
-            return JSON.stringify({
-              approved: true
             })
           }
         }

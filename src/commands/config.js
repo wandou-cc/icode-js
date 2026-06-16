@@ -23,7 +23,7 @@ import {
   setRepoPolicy,
   setValue
 } from '../core/config/store.js'
-import { parseConfigValue } from '../core/cli/args.js'
+import { normalizeLegacyArgs, parseConfigValue } from '../core/cli/args.js'
 import { IcodeError } from '../core/errors.js'
 import { resolveGitContext } from '../core/git/context.js'
 import { logger } from '../core/tools/logger.js'
@@ -485,19 +485,22 @@ async function resolvePolicyRoot(repoMode) {
   }
 }
 
+// 执行 config 子命令，输入原始参数，输出配置读写结果；参数会先归一化。
 export async function runConfigCommand(rawArgs) {
-  if (rawArgs[0] === 'ai') {
-    await runAiConfigCommand(rawArgs.slice(1))
+  const args = normalizeLegacyArgs(rawArgs)
+
+  if (args[0] === 'ai') {
+    await runAiConfigCommand(args.slice(1))
     return
   }
 
-  if (rawArgs[0] === 'platform') {
-    await runPlatformConfigCommand(rawArgs.slice(1))
+  if (args[0] === 'platform') {
+    await runPlatformConfigCommand(args.slice(1))
     return
   }
 
   const parsed = parseArgs({
-    args: rawArgs,
+    args,
     allowPositionals: true,
     options: {
       help: { type: 'boolean', short: 'h', default: false },

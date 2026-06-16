@@ -2,6 +2,11 @@ import { formatAiCommitSummary } from '../core/ai/commit-summary.js'
 import { getPlatformConfig, getRepoPolicy } from '../core/config/store.js'
 import { IcodeError } from '../core/errors.js'
 import { resolveGitContext } from '../core/git/context.js'
+import {
+  assertNoConflictedFiles,
+  assertNoPendingOperation,
+  readGitSafetyState
+} from '../core/git/preconditions.js'
 import { GitService } from '../core/git/service.js'
 import { confirm, input } from '../core/tools/interactive.js'
 import { requestRemoteMerge, resolveRemoteMergeProjectUrl } from '../core/remote-merge/client.js'
@@ -112,9 +117,9 @@ async function prepareAiCommitIfEnabled(inputOptions) {
   }
 }
 
-async function prepareCommitIfNeeded(git, options) {
-  const hasChanges = await git.hasChanges()
-  if (!hasChanges) {
+// 在 push 场景下按需创建本地提交，输入 GitService、命令参数和已读取的改动摘要，输出是否提交。
+async function prepareCommitIfNeeded(git, options, changes) {
+  if (changes.clean) {
     logger.info('工作区无改动，跳过 commit。')
     return false
   }
@@ -140,7 +145,52 @@ async function prepareCommitIfNeeded(git, options) {
   return true
 }
 
-async function checkoutTargetBranch(git, targetBranch, sourceBranch) {
+// 提取底层 Git 失败细节，输入异常对象，输出用于暂停错误的简洁原因。
+function resolveGitFailureReason(error) {
+  const stderr = typeof error?.meta?.stderr === 'string' ? error.meta.stderr.trim() : ''
+  const stdout = typeof error?.meta?.stdout === 'string' ? error.meta.stdout.trim() : ''
+  const output = [stderr, stdout].filter(Boolean).join('\n').trim()
+  const message = typeof error?.message === 'string' ? error.message.trim() : ''
+  const reason = output || message || 'Git 操作失败'
+
+  return reason.length > 2000 ? `${reason.slice(0, 2000)}...` : reason
+}
+
+// 判断 Git 失败是否来自合并冲突，输入异常对象，输出布尔结果。
+function isGitConflictFailure(error) {
+  const text = [
+    error?.meta?.stderr || '',
+    error?.meta?.stdout || '',
+    error?.message || ''
+  ].join('\n')
+
+  return /CONFLICT \(|Automatic merge failed|fix conflicts|unmerged files|needs merge|you need to resolve your current index first/i.test(text)
+}
+
+// 构建本地合并暂停错误，输入分支、阶段和原始异常，输出可被命令层汇总的 IcodeError。
+function buildLocalMergePauseError({ sourceBranch, targetBranch, step, error, summary = [] }) {
+  const reason = resolveGitFailureReason(error)
+  const conflict = isGitConflictFailure(error)
+  const prefix = conflict ? '本地合并冲突' : '本地合并失败'
+  const nextStep = conflict
+    ? '请解决冲突后执行 `icode undo --recover continue`，或执行 `icode undo --recover abort` 中止本次合并。'
+    : '请根据上面的 Git 错误修复后重试。'
+
+  return new IcodeError(`${prefix}(${step}): ${sourceBranch} -> ${targetBranch}\n${reason}\n${nextStep}`, {
+    code: 'PUSH_LOCAL_MERGE_PAUSED',
+    exitCode: 2,
+    cause: error,
+    meta: {
+      sourceBranch,
+      targetBranch,
+      step,
+      reason,
+      summary
+    }
+  })
+}
+
+async function checkoutTargetBranch(git, targetBranch, sourceBranch, summary = []) {
   const localExists = await git.branchExistsLocal(targetBranch)
   const remoteExists = await git.branchExistsRemote(targetBranch)
   let checkoutMode = 'local'
@@ -158,10 +208,19 @@ async function checkoutTargetBranch(git, targetBranch, sourceBranch) {
   }
 
   if (remoteExists) {
-    await git.pull(targetBranch, {
-      allowUnrelatedHistories: true,
-      noRebase: true
-    })
+    try {
+      await git.pull(targetBranch, {
+        noRebase: true
+      })
+    } catch (error) {
+      throw buildLocalMergePauseError({
+        sourceBranch,
+        targetBranch,
+        step: 'pull-target',
+        error,
+        summary
+      })
+    }
   }
 
   return {
@@ -173,8 +232,7 @@ async function checkoutTargetBranch(git, targetBranch, sourceBranch) {
 function normalizeRemoteMergePolicy(policy = {}) {
   const remoteMerge = policy.remoteMerge && typeof policy.remoteMerge === 'object' ? policy.remoteMerge : {}
   return {
-    enabled: remoteMerge.enabled !== false,
-    projectUrl: typeof remoteMerge.projectUrl === 'string' ? remoteMerge.projectUrl.trim() : ''
+    enabled: remoteMerge.enabled !== false
   }
 }
 
@@ -198,7 +256,7 @@ function buildRemoteMergePauseError(targetBranch, reason, meta = {}) {
   })
 }
 
-// 统一把 provider 返回的 step 注入错误文案，便于定位 create/approve/merge/inspect 具体失败点。
+// 统一把 provider 返回的 step 注入错误文案，便于定位 create/merge/inspect 具体失败点。
 function buildRemoteMergeResultMessage(prefix, result) {
   const reason = typeof result?.reason === 'string' && result.reason.trim()
     ? result.reason.trim()
@@ -225,6 +283,77 @@ function buildRemoteMergeBatchPauseError(failures, summary) {
   })
 }
 
+// 构建 push dry-run 步骤，输入分支目标和策略，输出不会产生副作用的计划列表。
+function buildPushDryRunPlan({ currentBranch, branchTargets, protectedBranches, inputOptions }) {
+  const steps = []
+
+  if (inputOptions.aiCommit) {
+    steps.push({
+      action: 'ai-commit',
+      branch: currentBranch,
+      reason: '将生成并提交 AI commit'
+    })
+  } else {
+    steps.push({
+      action: 'commit-if-needed',
+      branch: currentBranch,
+      reason: inputOptions.message ? '检测到改动时使用 -m/--message 提交' : '检测到改动时会要求输入提交信息'
+    })
+  }
+
+  if (inputOptions.pullMain) {
+    steps.push({
+      action: 'pull-main',
+      branch: currentBranch,
+      reason: '将主分支同步到当前分支'
+    })
+  }
+
+  branchTargets.forEach((targetBranch) => {
+    if (protectedBranches.has(targetBranch) && !inputOptions.forceProtected) {
+      steps.push({
+        action: 'skip-protected',
+        branch: targetBranch,
+        reason: '受保护分支，未传 --force-protected'
+      })
+      return
+    }
+
+    if (targetBranch === currentBranch) {
+      steps.push({
+        action: 'push-current',
+        branch: targetBranch,
+        reason: '将同步并推送当前分支'
+      })
+      return
+    }
+
+    steps.push({
+      action: inputOptions.remoteMerge ? 'remote-merge' : 'local-merge',
+      branch: targetBranch,
+      reason: inputOptions.remoteMerge ? '将创建并合并远程 MR' : '将切换目标分支、本地 merge 后推送'
+    })
+  })
+
+  return {
+    currentBranch,
+    branchTargets,
+    remoteMerge: Boolean(inputOptions.remoteMerge),
+    steps
+  }
+}
+
+// 根据 origin 推导远程合并项目 URL，输入平台配置与 remote，输出项目 URL。
+function resolveRemoteMergeProjectUrlFromOrigin(remoteMergePlatform, remoteOriginUrl) {
+  return {
+    projectUrl: resolveRemoteMergeProjectUrl({
+      provider: remoteMergePlatform.provider,
+      remoteUrl: remoteOriginUrl
+    }),
+    source: 'origin'
+  }
+}
+
 // 基于 origin 推导 GitLab 项目地址并发起固定 API 的 MR 创建请求。
 async function performRemoteMerge({ git, currentBranch, targetBranch, remoteExists, inputOptions, remoteMergePolicy, remoteMergePlatform }) {
   if (!remoteExists) {
@@ -242,18 +371,15 @@ async function performRemoteMerge({ git, currentBranch, targetBranch, remoteExis
   }
 
   const remoteOriginUrl = await git.getRemoteUrl('origin')
-  const projectUrl = resolveRemoteMergeProjectUrl({
-    provider: remoteMergePlatform.provider,
-    remoteUrl: remoteOriginUrl
-  })
+  const { projectUrl, source } = resolveRemoteMergeProjectUrlFromOrigin(remoteMergePlatform, remoteOriginUrl)
   if (!projectUrl) {
     throw buildRemoteMergePauseError(targetBranch, '无法从 origin 自动识别 GitLab 项目 URL，请检查 origin 是否指向 GitLab 仓库。', {
       origin: remoteOriginUrl
     })
   }
-  logger.info(`已根据 origin 自动识别 GitLab 项目 URL: ${projectUrl}`)
+  logger.info(`GitLab 项目 URL(${source}): ${logger.color('green', projectUrl)}`)
 
-  logger.info(`发起远程合并: ${currentBranch} -> ${targetBranch}`)
+  logger.info(`发起远程合并: ${logger.color('yellow', currentBranch)} -> ${logger.color('yellow', targetBranch)}`)
   const mergeRequestContent = await buildRemoteMergeCommitContent(git, currentBranch, targetBranch)
   const result = await requestRemoteMerge({
     provider: remoteMergePlatform.provider,
@@ -288,9 +414,9 @@ async function performRemoteMerge({ git, currentBranch, targetBranch, remoteExis
     : '远程合并已完成'
 
   if (result.mergeRequestUrl) {
-    logger.success(`${successReason}: ${result.mergeRequestUrl}`)
+    logger.success(`${successReason}: ${logger.color('green', result.mergeRequestUrl)}`)
   } else {
-    logger.success(`${successReason}: ${currentBranch} -> ${targetBranch}`)
+    logger.success(`${successReason}: ${logger.color('yellow', currentBranch)} -> ${logger.color('yellow', targetBranch)}`)
   }
 
   return result
@@ -326,6 +452,10 @@ async function runConcurrentRemoteMerges(options) {
   return Promise.all(tasks)
 }
 
+/**
+ * 执行 push 工作流。
+ * 输入为 push 命令选项，输出推送/合并摘要；关键假设是实际执行前必须没有未完成操作和冲突文件。
+ */
 export async function runPushWorkflow(inputOptions) {
   const context = await resolveGitContext({
     cwd: inputOptions.cwd,
@@ -351,31 +481,6 @@ export async function runPushWorkflow(inputOptions) {
     })
   }
 
-  const aiCommitResult = await prepareAiCommitIfEnabled(inputOptions)
-  if (aiCommitResult.canceled) {
-    return {
-      canceled: true,
-      reason: 'ai-commit-canceled',
-      repoRoot: context.topLevelPath,
-      currentBranch,
-      inheritedFromParent: context.inheritedFromParent
-    }
-  }
-
-  const shouldRunManualCommit = !aiCommitResult.applied && aiCommitResult.reason !== 'no-diff'
-  if (shouldRunManualCommit) {
-    await prepareCommitIfNeeded(git, inputOptions)
-  }
-  await git.fetch()
-
-  if (inputOptions.pullMain && context.defaultBranch !== currentBranch) {
-    logger.info(`先同步主分支 ${context.defaultBranch} 到当前分支 ${currentBranch}`)
-    await git.pull(context.defaultBranch, {
-      allowUnrelatedHistories: true,
-      noRebase: true
-    })
-  }
-
   let branchTargets = uniqueBranches([
     ...(inputOptions.notPushCurrent ? [] : [currentBranch]),
     ...(inputOptions.targetBranches || [])
@@ -389,6 +494,61 @@ export async function runPushWorkflow(inputOptions) {
       code: 'PUSH_EMPTY_TARGETS',
       exitCode: 2
     })
+  }
+
+  if (inputOptions.dryRun) {
+    return {
+      dryRun: true,
+      repoRoot: context.topLevelPath,
+      currentBranch,
+      inheritedFromParent: context.inheritedFromParent,
+      plan: buildPushDryRunPlan({
+        currentBranch,
+        branchTargets,
+        protectedBranches,
+        inputOptions
+      })
+    }
+  }
+
+  const safetyState = await readGitSafetyState(git)
+  assertNoPendingOperation(safetyState.operation, 'push', 'PUSH_GIT_OPERATION_IN_PROGRESS')
+  assertNoConflictedFiles(safetyState.changes, 'push', 'PUSH_CONFLICTED_FILES')
+
+  const aiCommitResult = await prepareAiCommitIfEnabled(inputOptions)
+  if (aiCommitResult.canceled) {
+    return {
+      canceled: true,
+      reason: 'ai-commit-canceled',
+      repoRoot: context.topLevelPath,
+      currentBranch,
+      inheritedFromParent: context.inheritedFromParent
+    }
+  }
+
+  const shouldRunManualCommit = !aiCommitResult.applied && aiCommitResult.reason !== 'no-diff'
+  if (shouldRunManualCommit) {
+    await prepareCommitIfNeeded(git, inputOptions, safetyState.changes)
+  }
+  await git.fetch()
+
+  const summary = []
+
+  if (inputOptions.pullMain && context.defaultBranch !== currentBranch) {
+    logger.info(`先同步主分支 ${context.defaultBranch} 到当前分支 ${currentBranch}`)
+    try {
+      await git.pull(context.defaultBranch, {
+        noRebase: true
+      })
+    } catch (error) {
+      throw buildLocalMergePauseError({
+        sourceBranch: context.defaultBranch,
+        targetBranch: currentBranch,
+        step: 'pull-main',
+        error,
+        summary
+      })
+    }
   }
 
   if (!inputOptions.yes) {
@@ -407,7 +567,6 @@ export async function runPushWorkflow(inputOptions) {
     }
   }
 
-  const summary = []
   const originalBranch = currentBranch
   const remoteMergeTargets = []
 
@@ -424,10 +583,19 @@ export async function runPushWorkflow(inputOptions) {
         const remoteExists = await git.branchExistsRemote(targetBranch)
         if (remoteExists) {
           logger.info(`同步远程分支: ${targetBranch}`)
-          await git.pull(targetBranch, {
-            allowUnrelatedHistories: true,
-            noRebase: true
-          })
+          try {
+            await git.pull(targetBranch, {
+              noRebase: true
+            })
+          } catch (error) {
+            throw buildLocalMergePauseError({
+              sourceBranch: `origin/${targetBranch}`,
+              targetBranch,
+              step: 'pull-current',
+              error,
+              summary
+            })
+          }
         }
 
         logger.info(`推送当前分支: ${targetBranch}`)
@@ -446,15 +614,25 @@ export async function runPushWorkflow(inputOptions) {
       } else {
         logger.info(`处理分支: ${targetBranch}`)
         logger.info(`切换到目标分支: ${targetBranch}`)
-        const { remoteExists, checkoutMode } = await checkoutTargetBranch(git, targetBranch, currentBranch)
+        const { remoteExists, checkoutMode } = await checkoutTargetBranch(git, targetBranch, currentBranch, summary)
         logger.info(`目标分支准备完成: ${targetBranch} (${checkoutMode})`)
 
         // 保留 merge commit，方便后续追溯“从哪个分支合并过来”。
         logger.info(`合并分支: ${currentBranch} -> ${targetBranch}`)
-        await git.merge(currentBranch, {
-          noFf: true,
-          noEdit: true
-        })
+        try {
+          await git.merge(currentBranch, {
+            noFf: true,
+            noEdit: true
+          })
+        } catch (error) {
+          throw buildLocalMergePauseError({
+            sourceBranch: currentBranch,
+            targetBranch,
+            step: 'merge-target',
+            error,
+            summary
+          })
+        }
         logger.success(`合并成功: ${currentBranch} -> ${targetBranch}`)
 
         logger.info(`推送目标分支: ${targetBranch}`)
@@ -493,7 +671,11 @@ export async function runPushWorkflow(inputOptions) {
     }
   } finally {
     const branchAfterWorkflow = await git.getCurrentBranch()
-    if (branchAfterWorkflow && branchAfterWorkflow !== originalBranch) {
+    const operationAfterWorkflow = await git.getInProgressOperation()
+    if (operationAfterWorkflow === 'merge') {
+      logger.warn(`检测到未完成的 merge，已保留在当前分支 ${branchAfterWorkflow || '(unknown)'}。`)
+      logger.warn('解决冲突后执行 `icode undo --recover continue`，或执行 `icode undo --recover abort` 中止。')
+    } else if (branchAfterWorkflow && branchAfterWorkflow !== originalBranch) {
       try {
         await git.checkout(originalBranch)
       } catch (error) {

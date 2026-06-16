@@ -180,3 +180,78 @@ test('ai-commit applies commit for untracked files without manual git add', asyn
     delete process.env.ICODE_CONFIG_PATH
   }
 })
+
+test('ai-commit prompt reports partial coverage for large multi-file diffs', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-ai-commit-workflow-test-'))
+  const repoPath = path.join(tempRoot, 'repo')
+  process.env.ICODE_CONFIG_PATH = path.join(tempRoot, 'config.json')
+
+  const originalFetch = global.fetch
+
+  try {
+    fs.mkdirSync(repoPath, { recursive: true })
+    await git(repoPath, ['init'])
+    await git(repoPath, ['config', 'user.email', 'test@example.com'])
+    await git(repoPath, ['config', 'user.name', 'test'])
+
+    fs.writeFileSync(path.join(repoPath, 'base.txt'), 'base\n', 'utf8')
+    await git(repoPath, ['add', '-A'])
+    await git(repoPath, ['commit', '-m', 'chore: init'])
+
+    fs.writeFileSync(path.join(repoPath, 'large-a.txt'), `${'a'.repeat(15000)}\n`, 'utf8')
+    fs.writeFileSync(path.join(repoPath, 'large-b.txt'), `${'b'.repeat(15000)}\n`, 'utf8')
+
+    upsertAiProfile('local', {
+      provider: 'openai',
+      format: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-test',
+      model: 'gpt-4o-mini'
+    })
+    useAiProfile('local')
+
+    let capturedBody = null
+    global.fetch = async (_url, options = {}) => {
+      capturedBody = JSON.parse(options.body)
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          forEach() {}
+        },
+        async text() {
+          return JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: '{"type":"chore","scope":"repo","subject":"summarize large diff","body":""}'
+                }
+              }
+            ]
+          })
+        }
+      }
+    }
+
+    const result = await runAiCommitWorkflow({
+      cwd: repoPath,
+      profile: 'local',
+      repoMode: 'auto',
+      apply: false,
+      lang: 'en'
+    })
+
+    assert.equal(result.commitMessage, 'chore(repo): summarize large diff')
+    assert.equal(result.diffCoverage.truncated, true)
+    assert.equal(result.diffCoverage.totalFiles, 2)
+    assert.ok(result.diffCoverage.partialFiles + result.diffCoverage.omittedFiles > 0)
+    assert.ok(capturedBody)
+    assert.match(capturedBody.messages[1].content, /Diff Coverage: partial/)
+    assert.match(capturedBody.messages[1].content, /Included partial file diffs:/)
+    assert.match(capturedBody.messages[1].content, /Omitted file diffs:/)
+    assert.match(capturedBody.messages[1].content, /treat omitted or partial file diffs as unknown/)
+  } finally {
+    global.fetch = originalFetch
+    delete process.env.ICODE_CONFIG_PATH
+  }
+})
