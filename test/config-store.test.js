@@ -23,10 +23,13 @@ test('config-store read/write basic flow', () => {
   const initial = readConfig()
   assert.equal(initial.version, 1)
   assert.equal(getConfigFilePath(), configPath)
+  assert.equal(fs.statSync(configPath).mode & 0o777, 0o600)
 
   setValue('defaults.repoMode', 'strict')
   const afterSet = readConfig()
   assert.equal(afterSet.defaults.repoMode, 'strict')
+  assert.equal(fs.statSync(configPath).mode & 0o777, 0o600)
+  assert.deepEqual(fs.readdirSync(tempRoot), ['config.json'])
 
   setRepoPolicy('/tmp/my-repo', {
     protectedBranches: ['main', 'release'],

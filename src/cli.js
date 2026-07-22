@@ -15,7 +15,7 @@ import { runSaveCommand } from './commands/save.js'
 import { runSyncCommand } from './commands/sync.js'
 import { runTagCommand } from './commands/tag.js'
 import { runUndoCommand } from './commands/undo.js'
-import { asIcodeError } from './core/errors.js'
+import { asIcodeError, IcodeError } from './core/errors.js'
 import { normalizeLegacyArgs } from './core/cli/args.js'
 import { notifyIfCliUpdateAvailable } from './core/cli/update-notifier.js'
 import { logger } from './core/tools/logger.js'
@@ -25,11 +25,38 @@ function isTruthy(value) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(normalized)
 }
 
+function redactSensitiveMeta(value, seen = new WeakSet()) {
+  if (typeof value === 'string') {
+    return value
+      .replace(/(Bearer\s+)[^\s"']+/gi, '$1[REDACTED]')
+      .replace(/((?:api[_-]?key|private[_-]?token|authorization)\s*[=:]\s*)[^\s,;"']+/gi, '$1[REDACTED]')
+  }
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+  if (seen.has(value)) {
+    return '[Circular]'
+  }
+
+  seen.add(value)
+  if (Array.isArray(value)) {
+    return value.map((item) => redactSensitiveMeta(item, seen))
+  }
+
+  const sanitized = {}
+  for (const [key, item] of Object.entries(value)) {
+    sanitized[key] = /api[_-]?key|token|authorization|secret|password/i.test(key)
+      ? '[REDACTED]'
+      : redactSensitiveMeta(item, seen)
+  }
+  return sanitized
+}
+
 function serializeErrorMeta(meta) {
   try {
-    return JSON.stringify(meta, null, 2)
+    return JSON.stringify(redactSensitiveMeta(meta), null, 2)
   } catch {
-    return String(meta)
+    return '[无法序列化错误详情]'
   }
 }
 
@@ -80,7 +107,11 @@ export async function runCli(argv = process.argv.slice(2), dependencies = {}) {
 
   const command = commands[commandName]
   if (!command) {
-    throw new Error(`未知命令: ${commandName}`)
+    throw new IcodeError(`未知命令: ${commandName}`, {
+      code: 'CLI_UNKNOWN_COMMAND',
+      exitCode: 2,
+      meta: { commandName }
+    })
   }
 
   await command(commandArgs)
@@ -123,7 +154,11 @@ function applyGlobalFlags(globalArgs) {
       }
     }
 
-    throw new Error(`未知全局参数: ${flag}`)
+    throw new IcodeError(`未知全局参数: ${flag}`, {
+      code: 'CLI_UNKNOWN_GLOBAL_FLAG',
+      exitCode: 2,
+      meta: { flag }
+    })
   }
 
   return {

@@ -75,6 +75,23 @@ test('runCli does not call update notifier for hidden completion command', async
   assert.equal(notifierCalled, false)
 })
 
+test('runCli reports unknown commands as structured usage errors', async () => {
+  await assert.rejects(
+    () => runCli(['missing-command'], {
+      commands: {},
+      notifyIfCliUpdateAvailable: async () => {}
+    }),
+    (error) => error?.code === 'CLI_UNKNOWN_COMMAND' && error?.exitCode === 2 && error?.meta?.commandName === 'missing-command'
+  )
+})
+
+test('runCli reports unknown global flags as structured usage errors', async () => {
+  await assert.rejects(
+    () => runCli(['--invalid']),
+    (error) => error?.code === 'CLI_UNKNOWN_GLOBAL_FLAG' && error?.exitCode === 2 && error?.meta?.flag === '--invalid'
+  )
+})
+
 test('resolveGitContext rejects non-git directories without implicit init', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'icode-cli-init-'))
 

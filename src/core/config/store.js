@@ -49,6 +49,45 @@ function ensureDirectory(filePath) {
   }
 }
 
+function secureConfigFile(filePath) {
+  try {
+    fs.chmodSync(filePath, 0o600)
+  } catch (error) {
+    throw new IcodeError(`无法设置配置文件权限: ${filePath}`, {
+      code: 'CONFIG_PERMISSION_ERROR',
+      cause: error
+    })
+  }
+}
+
+function writeConfigFile(filePath, config) {
+  ensureDirectory(filePath)
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
+
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(config, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600
+    })
+    fs.renameSync(tempPath, filePath)
+    secureConfigFile(filePath)
+  } catch (error) {
+    try {
+      fs.rmSync(tempPath, { force: true })
+    } catch {
+      // 保留原始写入异常。
+    }
+
+    if (error instanceof IcodeError) {
+      throw error
+    }
+    throw new IcodeError(`配置文件写入失败: ${filePath}`, {
+      code: 'CONFIG_WRITE_ERROR',
+      cause: error
+    })
+  }
+}
+
 function cloneDefault() {
   return JSON.parse(JSON.stringify(DEFAULT_CONFIG))
 }
@@ -59,15 +98,16 @@ export function readConfig() {
 
   if (!fs.existsSync(configPath)) {
     const initial = cloneDefault()
-    fs.writeFileSync(configPath, JSON.stringify(initial, null, 2), 'utf8')
+    writeConfigFile(configPath, initial)
     return initial
   }
 
   try {
+    secureConfigFile(configPath)
     const content = fs.readFileSync(configPath, 'utf8')
     if (!content.trim()) {
       const initial = cloneDefault()
-      fs.writeFileSync(configPath, JSON.stringify(initial, null, 2), 'utf8')
+      writeConfigFile(configPath, initial)
       return initial
     }
 
@@ -113,9 +153,7 @@ export function readConfig() {
 }
 
 export function writeConfig(nextConfig) {
-  const configPath = getConfigFilePath()
-  ensureDirectory(configPath)
-  fs.writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), 'utf8')
+  writeConfigFile(getConfigFilePath(), nextConfig)
 }
 
 function splitPathSegments(pathExpression) {
